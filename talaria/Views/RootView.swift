@@ -1,0 +1,70 @@
+import SwiftUI
+
+struct RootView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var showSidebar = false
+    @State private var showSkills = false
+    @State private var showSettings = false
+
+    var body: some View {
+        NavigationStack {
+            ChatView(showSkills: $showSkills)
+                .navigationTitle(model.chat.session?.displayTitle ?? "New chat")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { withAnimation(.snappy) { showSidebar.toggle() } } label: {
+                            Image(systemName: "sidebar.left")
+                        }
+                    }
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { showSkills = true } label: { Image(systemName: "sparkles") }
+                        Button { model.chat.startNewChat() } label: { Image(systemName: "square.and.pencil") }
+                        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                    }
+                }
+        }
+        .overlay { sidebarOverlay }
+        .sheet(isPresented: $showSkills) { SkillsView() }
+        .sheet(isPresented: $showSettings, onDismiss: { Task { await model.reconnect() } }) { SettingsView() }
+        .sheet(item: approvalBinding) { approval in
+            ApprovalView(request: approval)
+                .interactiveDismissDisabled()
+                .presentationDetents([.medium, .large])
+        }
+        .task {
+            if model.settings.isConfigured {
+                await model.reconnect()
+                await model.chat.resumeIfNeeded()
+            } else {
+                showSettings = true
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await model.chat.resumeIfNeeded() } }
+        }
+    }
+
+    /// Approval prompts are modal: the run is parked until the person answers.
+    private var approvalBinding: Binding<ApprovalRequest?> {
+        Binding(get: { model.chat.pendingApproval }, set: { if $0 == nil { model.chat.pendingApproval = nil } })
+    }
+
+    @ViewBuilder private var sidebarOverlay: some View {
+        if showSidebar {
+            ZStack(alignment: .leading) {
+                Color.black.opacity(0.35).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.snappy) { showSidebar = false } }
+                SessionsSidebar { session in
+                    withAnimation(.snappy) { showSidebar = false }
+                    if let session { Task { await model.chat.open(session) } } else { model.chat.startNewChat() }
+                }
+                .frame(width: 300)
+                .background(.regularMaterial)
+                .transition(.move(edge: .leading))
+            }
+            .zIndex(1)
+        }
+    }
+}
