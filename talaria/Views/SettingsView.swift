@@ -39,6 +39,11 @@ struct SettingsView: View {
                     Text("The dashboard must run with a username/password provider (HERMES_DASHBOARD_BASIC_AUTH_*) and be reachable from this device. The password is kept in the Keychain; the dashboard session renews itself silently.")
                 }
                 Section {
+                    Toggle("Voice mode", isOn: $settings.voiceEnabled)
+                } footer: {
+                    Text("Listening and speaking happen on this phone. Tap the microphone in the composer to talk to Hermes; talk over a reply to stop it. Permission requests are read aloud and take a spoken allow, always or deny.")
+                }
+                Section {
                     Button("Sign out", role: .destructive) {
                         Task { await model.signOut(); status = "Signed out"; }
                     }

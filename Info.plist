@@ -4,6 +4,10 @@
 <dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Talaria connects to your Hermes dashboard on the local network or VPN.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Talk to Hermes instead of typing.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Your speech is transcribed on this phone and sent to Hermes as text.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to send to Hermes.</string>
 	<key>NSAppTransportSecurity</key>

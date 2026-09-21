@@ -1,0 +1,243 @@
+import Foundation
+import Observation
+
+/// Hands-free conversation with Hermes: listen, send, speak the reply, listen again. Talking over
+/// a reply stops it. Permission and clarify requests are read aloud and can be answered by voice.
+@Observable @MainActor
+final class VoiceController {
+    enum State: Equatable { case idle, listening, thinking, speaking }
+    enum Answering: Equatable { case none, approval, clarify }
+
+    private(set) var state: State = .idle
+    private(set) var answering: Answering = .none
+    /// Live text of the utterance being spoken by the person.
+    private(set) var transcript = ""
+    var error: String?
+    var isActive: Bool { state != .idle }
+
+    private let recognizer = SpeechRecognizer()
+    private let speaker = Speaker()
+    private var splitter = SpeechSentenceSplitter()
+    private var silenceTask: Task<Void, Never>?
+    private var workingCueTask: Task<Void, Never>?
+    /// Set after a barge-in so the rest of the interrupted reply stays silent.
+    private var muteReply = false
+    private unowned let chat: ChatStore
+    private let skills: SkillsStore
+
+    /// Quiet gap after the transcript stops changing that ends an utterance.
+    private let endOfUtterance: Duration = .milliseconds(900)
+
+    init(chat: ChatStore, skills: SkillsStore) {
+        self.chat = chat
+        self.skills = skills
+        recognizer.onText = { [weak self] in self?.heard($0) }
+        recognizer.onError = { [weak self] in self?.error = $0.localizedDescription }
+        speaker.onFinished = { [weak self] in self?.finishedSpeaking() }
+        chat.signal = { [weak self] in self?.handle($0) }
+    }
+
+    func start() async {
+        guard state == .idle else { return }
+        error = nil
+        guard await SpeechRecognizer.requestPermissions() else {
+            error = VoiceError.permissionDenied.localizedDescription
+            return
+        }
+        do { try recognizer.start() } catch { self.error = error.localizedDescription; return }
+        transcript = ""
+        muteReply = false
+        state = chat.isRunning ? .thinking : .listening
+        promptForPendingRequest()
+    }
+
+    func stop() {
+        silenceTask?.cancel()
+        workingCueTask?.cancel()
+        speaker.stop()
+        recognizer.stop()
+        splitter = SpeechSentenceSplitter()
+        transcript = ""
+        answering = .none
+        state = .idle
+    }
+
+    // MARK: Listening
+
+    private func heard(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != transcript else { return }
+        transcript = trimmed
+        if state == .speaking, Self.wordCount(trimmed) >= 2 {
+            // Barge-in: stop talking at once and drop the rest of this reply.
+            speaker.stop()
+            splitter = SpeechSentenceSplitter()
+            muteReply = true
+            state = .listening
+        }
+        silenceTask?.cancel()
+        silenceTask = Task { [weak self, endOfUtterance] in
+            try? await Task.sleep(for: endOfUtterance)
+            guard !Task.isCancelled else { return }
+            self?.utteranceEnded()
+        }
+    }
+
+    private func utteranceEnded() {
+        let text = transcript
+        transcript = ""
+        recognizer.nextUtterance()
+        guard !text.isEmpty else { return }
+        if speaker.isSpeaking {
+            // Anything said while Hermes talks ends the reply, even a single word.
+            speaker.stop()
+            splitter = SpeechSentenceSplitter()
+            muteReply = true
+            finishedSpeaking()
+            if Self.isStopWord(text) { return }
+        }
+        switch answering {
+        case .approval: answerApproval(text)
+        case .clarify: answerClarify(text)
+        case .none: Task { await submit(text) }
+        }
+    }
+
+    private static let stopWords: Set<String> = ["stop", "cancel", "nevermind", "never mind", "halt"]
+
+    private func submit(_ text: String) async {
+        if chat.isRunning {
+            if Self.isStopWord(text) {
+                await chat.stop()
+                return
+            }
+            // A stray word while Hermes works is noise, not a redirection.
+            guard Self.wordCount(text) >= 2 else { return }
+        }
+        muteReply = false
+        splitter = SpeechSentenceSplitter()
+        state = .thinking
+        scheduleWorkingCue()
+        if chat.isRunning {
+            await chat.redirect(text, viaVoice: true)
+        } else {
+            await chat.send(text, skills: skills, viaVoice: true)
+        }
+        if chat.error != nil, state == .thinking { state = .listening }
+    }
+
+    /// A short spoken cue when a turn runs long with nothing said yet.
+    private func scheduleWorkingCue() {
+        workingCueTask?.cancel()
+        workingCueTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let self, self.state == .thinking, !self.splitter.receivedAny else { return }
+            self.say("Still working on it.")
+        }
+    }
+
+    // MARK: Replies
+
+    private func handle(_ s: ChatSignal) {
+        guard isActive else { return }
+        switch s {
+        case .turnStarted:
+            muteReply = false
+            if state == .listening { state = .thinking }
+        case .assistantDelta(let text):
+            guard !muteReply else { return }
+            workingCueTask?.cancel()
+            for chunk in splitter.push(text) { say(chunk) }
+        case .turnComplete(let final, let status):
+            workingCueTask?.cancel()
+            if !muteReply {
+                if !splitter.receivedAny, let final, status != "interrupted" { _ = splitter.push(final) }
+                for chunk in splitter.flush() { say(chunk) }
+            }
+            splitter = SpeechSentenceSplitter()
+            if !speaker.isSpeaking, state == .thinking { state = .listening }
+        case .requestsChanged:
+            promptForPendingRequest()
+        }
+    }
+
+    private func say(_ text: String) {
+        state = .speaking
+        speaker.speak(text)
+    }
+
+    private func finishedSpeaking() {
+        guard state == .speaking else { return }
+        state = chat.isRunning ? .thinking : .listening
+    }
+
+    // MARK: Permission and clarify requests by voice
+
+    private static let spokenChoice = ["once": "allow", "session": "allow for this session", "always": "always allow", "deny": "deny"]
+    private static let allowWords: Set<String> = ["allow", "yes", "ok", "okay", "approve", "sure", "yep", "yeah", "go", "proceed", "confirm"]
+    private static let denyWords: Set<String> = ["deny", "no", "don't", "dont", "stop", "cancel", "reject", "nope"]
+
+    private func promptForPendingRequest() {
+        if let a = chat.pendingApproval {
+            answering = .approval
+            let what = !a.description.isEmpty ? a.description : (!a.command.isEmpty ? a.command : (a.toolName ?? "a command"))
+            let choices = a.choices.compactMap { Self.spokenChoice[$0] }.joined(separator: ", ")
+            say("Hermes needs permission to run \(SpeechText.brief(what)). Say \(choices).")
+        } else if let c = chat.pendingClarify {
+            answering = .clarify
+            var q = c.question
+            if !c.choices.isEmpty { q += ". The options are: " + c.choices.joined(separator: ", ") + "." }
+            say(SpeechText.brief(q, limit: 400))
+        } else if answering != .none {
+            // Answered on screen while we were still asking.
+            answering = .none
+            if state == .speaking { speaker.stop(); finishedSpeaking() }
+        }
+    }
+
+    private func answerApproval(_ spoken: String) {
+        guard let a = chat.pendingApproval else { answering = .none; return }
+        let words = Set(Self.words(spoken))
+        let allow = !words.isDisjoint(with: Self.allowWords)
+        let deny = !words.isDisjoint(with: Self.denyWords)
+        var choice: String?
+        if words.contains("always"), a.choices.contains("always") { choice = "always" }
+        else if words.contains("session"), a.choices.contains("session") { choice = "session" }
+        else if deny && !allow { choice = "deny" }
+        else if allow && !deny { choice = a.choices.contains("once") ? "once" : a.choices.first }
+        guard let choice else {
+            say("I didn't catch that. Say \(a.choices.compactMap { Self.spokenChoice[$0] }.joined(separator: ", ")).")
+            return
+        }
+        answering = .none
+        chat.respond(to: a, choice: choice)
+        say(choice == "deny" ? "Denied." : "Allowed.")
+    }
+
+    private func answerClarify(_ spoken: String) {
+        guard let c = chat.pendingClarify else { answering = .none; return }
+        var answer = spoken
+        if !c.choices.isEmpty {
+            let s = spoken.lowercased()
+            let hits = c.choices.filter { let o = $0.lowercased(); return s.contains(o) || o.contains(s) }
+            guard hits.count == 1 else {
+                say("Which one: " + c.choices.joined(separator: ", ") + "?")
+                return
+            }
+            answer = hits[0]
+        }
+        answering = .none
+        chat.respond(to: c, answer: answer)
+        state = .thinking
+    }
+
+    private static func isStopWord(_ s: String) -> Bool {
+        stopWords.contains(words(s).joined(separator: " "))
+    }
+
+    private static func words(_ s: String) -> [String] {
+        s.lowercased().components(separatedBy: CharacterSet.letters.inverted).filter { !$0.isEmpty }
+    }
+
+    private static func wordCount(_ s: String) -> Int { words(s).count }
+}

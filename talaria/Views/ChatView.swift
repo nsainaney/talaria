@@ -23,6 +23,7 @@ struct ChatView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 4)
             }
             if draft.hasPrefix("/") { slashPopup }
+            if model.voice.isActive { VoiceBar().padding(.bottom, 6) }
             composer
         }
         .onChange(of: model.chat.session?.id) { _, _ in draft = ""; attachments = [] }
@@ -214,6 +215,15 @@ struct ChatView: View {
                         .background(Color(.tertiarySystemFill), in: Circle())
                 }
                 .disabled(chat.isRunning || !model.gateway.isConnected)
+                if model.settings.voiceEnabled && !model.voice.isActive {
+                    Button { composerFocused = false; Task { await model.voice.start() } } label: {
+                        Image(systemName: "mic").font(.body.weight(.medium))
+                            .frame(width: 36, height: 36)
+                            .background(Color(.tertiarySystemFill), in: Circle())
+                    }
+                    .disabled(!model.gateway.isConnected)
+                    .accessibilityLabel("Talk to Hermes")
+                }
                 if let label = chat.modelLabel {
                     Text(label).font(.subheadline)
                         .padding(.horizontal, 12).frame(height: 36)

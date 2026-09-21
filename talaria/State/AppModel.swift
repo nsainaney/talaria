@@ -8,6 +8,7 @@ final class AppModel {
     let pins = PinStore()
     let chat = ChatStore()
     let skills: SkillsStore
+    let voice: VoiceController
 
     var sessions: [HermesSession] = []
     var sessionsError: String?
@@ -16,6 +17,7 @@ final class AppModel {
 
     init() {
         skills = SkillsStore(pins: pins)
+        voice = VoiceController(chat: chat, skills: skills)
         chat.client = gateway
         gateway.onEvent = { [weak self] e in self?.handle(event: e) }
         gateway.onServerRequest = { [weak self] r in self?.chat.handle(serverRequest: r) ?? false }
@@ -49,6 +51,7 @@ final class AppModel {
     }
 
     func signOut() async {
+        voice.stop()
         gateway.disconnect()
         await settings.auth?.logout()
         settings.clearCredentials()

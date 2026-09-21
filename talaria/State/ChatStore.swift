@@ -14,12 +14,21 @@ struct ChatItem: Identifiable {
     var fileNames: [String] = []
     var isSteer = false
     var isQueued = false
+    var isVoice = false
     var toolId: String?
     var toolName: String?
     var toolResult: String?
     var toolError = false
     var toolDuration: Double?
     var isStreaming = false
+}
+
+/// What the voice layer needs to know about the open session, in order.
+enum ChatSignal {
+    case turnStarted
+    case assistantDelta(String)
+    case turnComplete(final: String?, status: String?)
+    case requestsChanged
 }
 
 @Observable @MainActor
@@ -36,13 +45,15 @@ final class ChatStore {
     /// Model and reasoning effort per live session, from `session.info`.
     private var liveInfo: [String: (model: String, effort: String)] = [:]
     var isLoadingHistory = false
-    var pendingApproval: ApprovalRequest?
-    var pendingClarify: ClarifyRequest?
+    var pendingApproval: ApprovalRequest? { didSet { signal?(.requestsChanged) } }
+    var pendingClarify: ClarifyRequest? { didSet { signal?(.requestsChanged) } }
     var error: String?
 
     var client: GatewayClient?
     var onSessionCreated: ((HermesSession) -> Void)?
     var onTitleChanged: ((String, String) -> Void)?
+    /// Fired for the open session only; see `ChatSignal`.
+    var signal: ((ChatSignal) -> Void)?
 
     private var currentKey: String { session?.liveId ?? Self.draftKey }
 
@@ -137,7 +148,7 @@ final class ChatStore {
 
     // MARK: Sending
 
-    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil) async {
+    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil, viaVoice: Bool = false) async {
         guard let client, client.isConnected else { error = GatewayError.notConnected.localizedDescription; return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
@@ -176,7 +187,7 @@ final class ChatStore {
             }
             if body.isEmpty { body = "See the attached image." }
 
-            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name)))
+            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name), isVoice: viaVoice))
 
             // `/skill args` goes through the server's slash dispatcher, like the TUI.
             var submitText = body
@@ -225,13 +236,14 @@ final class ChatStore {
     }
 
     /// Replace the running turn's direction with new text (interrupts and continues).
-    func redirect(_ text: String) async {
+    func redirect(_ text: String, viaVoice: Bool = false) async {
         guard let client, let sid = session?.liveId, isRunning else { return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         do {
             var item = ChatItem(kind: .user, text: text)
             item.isSteer = true
+            item.isVoice = viaVoice
             transcripts[sid, default: []].append(item)
             _ = try await client.request("session.redirect", ["session_id": sid, "text": text], timeout: 60)
         } catch {
@@ -291,15 +303,18 @@ final class ChatStore {
     func handle(event e: GatewayEvent) {
         guard let sid = e.sessionId else { return }
         var items: [ChatItem] { get { transcripts[sid] ?? [] } set { transcripts[sid] = newValue } }
+        let isOpen = sid == currentKey
 
         switch e.type {
         case "message.start":
             running.insert(sid)
             statusLines[sid] = nil
             if let i = items.firstIndex(where: { $0.kind == .user && $0.isQueued }) { items[i].isQueued = false }
+            if isOpen { signal?(.turnStarted) }
 
         case "message.delta":
             appendStreaming(kind: .assistant, e.string("text") ?? "", sessionId: sid)
+            if isOpen, let t = e.string("text"), !t.isEmpty { signal?(.assistantDelta(t)) }
 
         case "reasoning.delta", "thinking.delta":
             appendStreaming(kind: .reasoning, e.string("text") ?? "", sessionId: sid)
@@ -353,6 +368,7 @@ final class ChatStore {
             default: break
             }
             if let w = e.string("warning"), !w.isEmpty { items.append(ChatItem(kind: .notice, text: w)) }
+            if isOpen { signal?(.turnComplete(final: final.isEmpty ? nil : final, status: e.string("status"))) }
 
         case "status.update":
             statusLines[sid] = e.string("text")
