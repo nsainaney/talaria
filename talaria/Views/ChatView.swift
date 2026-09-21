@@ -69,15 +69,17 @@ struct ChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if chat.items.isEmpty && !chat.isLoadingHistory {
-                        Text(model.settings.isConfigured ? "Ask Hermes anything. Type / to pick a skill." : "Set your Hermes server in Settings.")
+                        Text(model.settings.isConfigured ? "Ask Hermes anything. Type / to pick a skill." : "Sign in to your Hermes dashboard in Settings.")
                             .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 80)
                     }
                     ForEach(chat.items) { item in
                         ChatRow(item: item).id(item.id)
                     }
                     if chat.isRunning && !(chat.items.last?.isStreaming ?? false) {
-                        HStack(spacing: 6) { ProgressView(); Text("Working…").font(.caption).foregroundStyle(.secondary) }
+                        HStack(spacing: 6) { ProgressView(); Text(chat.statusText ?? "Working…").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                             .padding(.horizontal)
+                    } else if chat.isRunning, let status = chat.statusText {
+                        Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -202,36 +204,50 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "plus.circle").font(.title2)
             }
-            .disabled(chat.isRunning || !model.settings.isConfigured)
-            TextField(chat.isRunning ? "Steer the running turn…" : "Message Hermes", text: $draft, axis: .vertical)
+            .disabled(chat.isRunning || !model.gateway.isConnected)
+            TextField(chat.isRunning ? "Queue a message…" : "Message Hermes", text: $draft, axis: .vertical)
                 .lineLimit(1...6)
                 .textFieldStyle(.roundedBorder)
                 .focused($composerFocused)
                 .autocorrectionDisabled(draft.hasPrefix("/"))
-            if chat.isRunning {
-                Button { Task { await steerDraft() } } label: {
-                    Image(systemName: "arrow.turn.down.right.circle.fill").font(.title2)
-                }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if chat.isRunning && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button { Task { await chat.stop() } } label: {
                     Image(systemName: "stop.circle.fill").font(.title2)
                 }
                 .tint(.red)
+            } else if chat.isRunning {
+                // Send queues behind the running turn; long-press for steer / redirect.
+                Button { Task { await submitWhileRunning(.queue) } } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                }
+                .contextMenu {
+                    Button { Task { await submitWhileRunning(.queue) } } label: { Label("Queue after this turn", systemImage: "text.append") }
+                    Button { Task { await submitWhileRunning(.steer) } } label: { Label("Steer the running turn", systemImage: "arrow.turn.down.right") }
+                    Button { Task { await submitWhileRunning(.redirect) } } label: { Label("Redirect the running turn", systemImage: "arrow.uturn.forward") }
+                    Divider()
+                    Button(role: .destructive) { Task { await chat.stop() } } label: { Label("Stop", systemImage: "stop.circle") }
+                }
             } else {
                 Button { Task { await sendDraft() } } label: {
                     Image(systemName: "arrow.up.circle.fill").font(.title2)
                 }
-                .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || !model.settings.isConfigured)
+                .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || !model.gateway.isConnected)
             }
         }
         .padding(.horizontal).padding(.vertical, 8)
         .background(.bar)
     }
 
-    private func steerDraft() async {
+    private enum RunningSubmit { case queue, steer, redirect }
+
+    private func submitWhileRunning(_ mode: RunningSubmit) async {
         let text = draft
         draft = ""
-        await chat.steer(text)
+        switch mode {
+        case .queue: await chat.enqueue(text)
+        case .steer: await chat.steer(text)
+        case .redirect: await chat.redirect(text)
+        }
     }
 
     private func sendDraft() async {
@@ -247,17 +263,7 @@ struct ChatView: View {
             case .text(let name, let body): files.append((name, body))
             }
         }
-        await chat.send(Self.expandSlash(text, skills: model.skills), images: images, files: files)
-    }
-
-    /// `/skill-name rest of message` becomes an explicit skill invocation.
-    static func expandSlash(_ text: String, skills: SkillsStore) -> String {
-        guard text.hasPrefix("/") else { return text }
-        let body = text.dropFirst()
-        let name = String(body.prefix { !$0.isWhitespace })
-        guard let skill = skills.skill(named: name) else { return text }
-        let rest = String(body.dropFirst(name.count))
-        return SkillsStore.invocationText(skill: skill, instruction: rest)
+        await chat.send(text, images: images, files: files, skills: model.skills)
     }
 }
 

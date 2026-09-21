@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Popup for an `approval.request` event. The run is parked server-side until a choice is posted.
+/// Popup for an `approval` server request. The turn is parked until a choice is sent back.
 struct ApprovalView: View {
     @Environment(AppModel.self) private var model
     let request: ApprovalRequest
@@ -15,6 +15,9 @@ struct ApprovalView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
+                if let t = request.toolName, !t.isEmpty {
+                    Text(t).font(.caption.monospaced()).foregroundStyle(.secondary)
+                }
                 if !request.description.isEmpty {
                     Text(request.description)
                 }
@@ -38,13 +41,42 @@ struct ApprovalView: View {
     @ViewBuilder
     private func choiceButton(_ choice: String) -> some View {
         let (label, icon) = Self.labels[choice] ?? (choice.capitalized, "questionmark")
-        let action = { Task { await model.chat.respond(to: request, choice: choice) } }
         if choice == "deny" {
-            Button(action: { _ = action() }) { Label(label, systemImage: icon).frame(maxWidth: .infinity) }
+            Button { model.chat.respond(to: request, choice: choice) } label: { Label(label, systemImage: icon).frame(maxWidth: .infinity) }
                 .buttonStyle(.bordered).tint(.red)
         } else {
-            Button(action: { _ = action() }) { Label(label, systemImage: icon).frame(maxWidth: .infinity) }
+            Button { model.chat.respond(to: request, choice: choice) } label: { Label(label, systemImage: icon).frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+/// Popup for a `clarify` server request: one question, optional choices, free-text otherwise.
+struct ClarifyView: View {
+    @Environment(AppModel.self) private var model
+    let request: ClarifyRequest
+    @State private var answer = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(request.question)
+                if request.choices.isEmpty {
+                    TextField("Your answer", text: $answer, axis: .vertical).lineLimit(1...5).textFieldStyle(.roundedBorder)
+                    Button("Send") { model.chat.respond(to: request, answer: answer) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(answer.trimmingCharacters(in: .whitespaces).isEmpty)
+                } else {
+                    ForEach(request.choices, id: \.self) { c in
+                        Button { model.chat.respond(to: request, answer: c) } label: { Text(c).frame(maxWidth: .infinity) }
+                            .buttonStyle(.bordered)
+                    }
+                }
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Hermes is asking")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

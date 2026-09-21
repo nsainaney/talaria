@@ -11,337 +11,400 @@ struct ChatItem: Identifiable {
     var kind: Kind
     var text: String = ""
     var images: [UIImage] = []
-    /// Names of text files inlined into this turn (their contents ride in the sent input).
     var fileNames: [String] = []
     var isSteer = false
+    var isQueued = false
+    var toolId: String?
     var toolName: String?
     var toolResult: String?
     var toolError = false
     var toolDuration: Double?
-    var toolCallId: String?
     var isStreaming = false
 }
 
 @Observable @MainActor
 final class ChatStore {
-    private static let activeRunKey = "hermes.activeRun"
+    private static let draftKey = "__new__"
+    private static let lastSessionKey = "hermes.lastSession"
 
     var session: HermesSession?
-    var items: [ChatItem] = []
-    var isRunning = false
+    private var transcripts: [String: [ChatItem]] = [:]
+    /// Live session ids with a turn in progress.
+    private var running: Set<String> = []
+    /// Transient status line per live session (compacting, tool progress, …).
+    private var statusLines: [String: String] = [:]
     var isLoadingHistory = false
     var pendingApproval: ApprovalRequest?
+    var pendingClarify: ClarifyRequest?
     var error: String?
 
-    private(set) var runId: String?
-    private var streamTask: Task<Void, Never>?
+    var client: GatewayClient?
+    var onSessionCreated: ((HermesSession) -> Void)?
+    var onTitleChanged: ((String, String) -> Void)?
 
-    var client: HermesClient?
+    private var currentKey: String { session?.liveId ?? Self.draftKey }
+
+    var items: [ChatItem] {
+        get { transcripts[currentKey] ?? [] }
+        set { transcripts[currentKey] = newValue }
+    }
+    var isRunning: Bool { session.map { running.contains($0.liveId) } ?? false }
+    var statusText: String? { session.flatMap { statusLines[$0.liveId] } }
 
     // MARK: Session lifecycle
 
     func startNewChat() {
-        cancelStream()
         session = nil
-        items = []
-        pendingApproval = nil
+        transcripts[Self.draftKey] = []
         error = nil
+        UserDefaults.standard.removeObject(forKey: Self.lastSessionKey)
     }
 
+    /// Attach to a stored session. `session.resume` reuses the live agent when one exists, so an
+    /// in-flight turn keeps streaming into this transcript.
     func open(_ s: HermesSession) async {
         guard let client else { return }
-        cancelStream()
-        session = s
-        items = []
-        pendingApproval = nil
         error = nil
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
-            items = Self.items(from: try await client.messages(sessionId: s.id))
+            let r = try await client.request("session.resume", ["session_id": s.id], timeout: 180)
+            var live = s
+            live.liveId = r["session_id"] as? String ?? s.id
+            if let info = r["info"] as? [String: Any], let t = info["title"] as? String, !t.isEmpty { live.title = t }
+            session = live
+            UserDefaults.standard.set(s.id, forKey: Self.lastSessionKey)
+            apply(resume: r, to: live.liveId)
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    private func reloadHistory() async {
-        guard let client, let session else { return }
-        if let msgs = try? await client.messages(sessionId: session.id) {
-            items = Self.items(from: msgs)
+    /// Re-fetch a session's transcript after a replay gap or server restart.
+    func resync(liveId: String) async {
+        guard let client, let s = session, s.liveId == liveId else { return }
+        if let r = try? await client.request("session.resume", ["session_id": s.id], timeout: 180) {
+            apply(resume: r, to: liveId)
         }
     }
 
+    private func apply(resume r: [String: Any], to liveId: String) {
+        var rows = Self.items(from: (r["messages"] as? [[String: Any]] ?? []).compactMap(TranscriptMessage.init(row:)))
+        let isRunning = (r["running"] as? Bool) ?? ((r["info"] as? [String: Any])?["running"] as? Bool) ?? false
+        if isRunning, let inflight = r["inflight"] as? [String: Any] {
+            if let u = inflight["user"] as? String, !u.isEmpty, rows.last?.kind != .user || rows.last?.text != u {
+                rows.append(ChatItem(kind: .user, text: u))
+            }
+            if let a = inflight["assistant"] as? String, !a.isEmpty {
+                rows.append(ChatItem(kind: .assistant, text: a, isStreaming: true))
+            }
+        }
+        transcripts[liveId] = rows
+        if isRunning { running.insert(liveId) } else { running.remove(liveId) }
+        if let pa = r["pending_approval"] as? [String: Any], pendingApproval == nil {
+            // The open server request itself arrives via open_requests; this only pre-warns.
+            _ = pa
+        }
+    }
+
+    func forget(sessionLiveId: String) {
+        transcripts[sessionLiveId] = nil
+        running.remove(sessionLiveId)
+        client?.forgetSession(sessionLiveId)
+    }
+
+    func lastOpenedSessionId() -> String? { UserDefaults.standard.string(forKey: Self.lastSessionKey) }
+
     // MARK: Sending
 
-    /// `files` are text documents; the API has no upload, so their contents are inlined after the message.
-    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = []) async {
-        guard let client, !isRunning else { return }
+    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil) async {
+        guard let client, client.isConnected else { error = GatewayError.notConnected.localizedDescription; return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
         error = nil
         do {
             if session == nil {
-                session = try await client.createSession(title: nil)
+                let r = try await client.request("session.create", [:], timeout: 60)
+                guard let liveId = r["session_id"] as? String else { throw GatewayError.badFrame }
+                let stored = r["stored_session_id"] as? String ?? liveId
+                let created = HermesSession(id: stored, liveId: liveId)
+                transcripts[liveId] = transcripts[Self.draftKey] ?? []
+                transcripts[Self.draftKey] = []
+                session = created
+                UserDefaults.standard.set(stored, forKey: Self.lastSessionKey)
+                onSessionCreated?(created)
             }
             guard let session else { return }
-            let history = transcriptHistory()
-            items.append(ChatItem(kind: .user, text: text, images: images, fileNames: files.map(\.name)))
-            isRunning = true
-            var input = text.isEmpty ? (files.isEmpty ? "(see attached image)" : "See the attached file(s).") : text
-            for f in files {
-                input += "\n\n--- Attached file: \(f.name) ---\n```\n\(f.text)\n```"
+            let sid = session.liveId
+
+            // Attachments are staged server-side before the prompt.
+            for img in images {
+                guard let jpeg = ImageEncoding.jpegData(img) else { continue }
+                _ = try await client.request("image.attach_bytes", [
+                    "session_id": sid, "content_base64": jpeg.base64EncodedString(), "filename": "photo.jpg", "ext": "jpg"], timeout: 120)
             }
-            let dataURLs = images.compactMap { ImageEncoding.dataURL($0) }
-            let id = try await client.createRun(
-                input: input, imageDataURLs: dataURLs, history: history, sessionId: session.id)
-            beginTracking(runId: id, sessionId: session.id)
-            streamTask = Task { [weak self] in await self?.consume(runId: id, client: client) }
+            var body = text
+            for f in files {
+                let dataURL = "data:text/plain;base64," + Data(f.text.utf8).base64EncodedString()
+                if let r = try? await client.request("file.attach", ["session_id": sid, "data_url": dataURL, "name": f.name], timeout: 120),
+                   let ref = r["ref_text"] as? String, !ref.isEmpty {
+                    body += (body.isEmpty ? "" : "\n") + ref
+                } else {
+                    body += "\n\n--- Attached file: \(f.name) ---\n```\n\(f.text)\n```"
+                }
+            }
+            if body.isEmpty { body = "See the attached image." }
+
+            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name)))
+
+            // `/skill args` goes through the server's slash dispatcher, like the TUI.
+            var submitText = body
+            if body.hasPrefix("/") {
+                let name = String(body.dropFirst().prefix { !$0.isWhitespace })
+                let arg = String(body.dropFirst(1 + name.count)).trimmingCharacters(in: .whitespaces)
+                if let skills, skills.skill(named: name) != nil {
+                    let d = try await client.request("command.dispatch", ["name": name, "arg": arg, "session_id": sid], timeout: 60)
+                    switch d["type"] as? String {
+                    case "skill", "send":
+                        if let m = d["message"] as? String, !m.isEmpty { submitText = m }
+                        if let n = d["notice"] as? String, !n.isEmpty { transcripts[sid, default: []].append(ChatItem(kind: .notice, text: n)) }
+                    case "exec", "plugin":
+                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: d["output"] as? String ?? "(no output)"))
+                        return
+                    default:
+                        if let m = d["message"] as? String, !m.isEmpty { submitText = m }
+                    }
+                }
+            }
+
+            running.insert(sid)
+            let r = try await client.request("prompt.submit", ["session_id": sid, "text": submitText], timeout: 60)
+            if let status = r["status"] as? String, status == "queued" {
+                transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Queued behind the running turn"))
+            }
         } catch {
             self.error = error.localizedDescription
-            isRunning = false
+            if let sid = session?.liveId, transcripts[sid]?.last?.kind == .user { running.remove(sid) }
         }
     }
 
-    /// Prior user/assistant turns as plain `{role, content}` pairs for `conversation_history`.
-    /// Tool rows, reasoning and steer messages are not turns and are left out.
-    private func transcriptHistory() -> [[String: String]] {
-        items.compactMap { item in
-            switch item.kind {
-            case .user where !item.isSteer && !item.text.isEmpty: return ["role": "user", "content": item.text]
-            case .assistant where !item.text.isEmpty: return ["role": "assistant", "content": item.text]
-            default: return nil
-            }
+    /// Queue a message to run after the current turn (FIFO, never a live correction).
+    func enqueue(_ text: String) async {
+        guard let client, let sid = session?.liveId, isRunning else { return }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        do {
+            var item = ChatItem(kind: .user, text: text)
+            item.isQueued = true
+            transcripts[sid, default: []].append(item)
+            _ = try await client.request("prompt.submit", ["session_id": sid, "text": text, "queued": true], timeout: 60)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Replace the running turn's direction with new text (interrupts and continues).
+    func redirect(_ text: String) async {
+        guard let client, let sid = session?.liveId, isRunning else { return }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        do {
+            var item = ChatItem(kind: .user, text: text)
+            item.isSteer = true
+            transcripts[sid, default: []].append(item)
+            _ = try await client.request("session.redirect", ["session_id": sid, "text": text], timeout: 60)
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 
     /// Inject guidance into the running turn without stopping it.
     func steer(_ text: String) async {
-        guard let client, let runId, isRunning else { return }
+        guard let client, let sid = session?.liveId, isRunning else { return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         do {
-            try await client.steer(runId: runId, text: text)
-            items.append(ChatItem(kind: .user, text: text, isSteer: true))
+            let r = try await client.request("session.steer", ["session_id": sid, "text": text], timeout: 30)
+            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text, isSteer: true))
+            if r["status"] as? String == "rejected" {
+                transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Steer rejected"))
+            }
         } catch {
             self.error = error.localizedDescription
         }
     }
 
     func stop() async {
-        guard let client, let runId else { return }
-        try? await client.stopRun(id: runId)
+        guard let client, let sid = session?.liveId else { return }
+        _ = try? await client.request("session.interrupt", ["session_id": sid], timeout: 30)
     }
 
-    func respond(to approval: ApprovalRequest, choice: String) async {
-        guard let client else { return }
-        do {
-            try await client.approve(runId: approval.runId, choice: choice, requestId: approval.requestId)
-            if pendingApproval == approval { pendingApproval = nil }
-        } catch {
-            self.error = error.localizedDescription
+    // MARK: Server requests (approval, clarify)
+
+    /// Returns false for request kinds this client does not handle.
+    func handle(serverRequest r: ServerRequest) -> Bool {
+        switch r.method {
+        case "approval":
+            pendingApproval = ApprovalRequest(request: r)
+            return true
+        case "clarify":
+            pendingClarify = ClarifyRequest(request: r)
+            return true
+        default:
+            return false
         }
     }
 
-    private func cancelStream() {
-        streamTask?.cancel()
-        streamTask = nil
-        runId = nil
-        isRunning = false
-        finishStreamingRows()
+    func respond(to approval: ApprovalRequest, choice: String) {
+        approval.request?.respond(["choice": choice])
+        if pendingApproval == approval { pendingApproval = nil }
     }
 
-    // MARK: Run tracking and resume
-
-    private func beginTracking(runId: String, sessionId: String) {
-        self.runId = runId
-        UserDefaults.standard.set([runId, sessionId], forKey: Self.activeRunKey)
+    func respond(to clarify: ClarifyRequest, answer: String) {
+        clarify.request.respond(["answer": answer])
+        if pendingClarify == clarify { pendingClarify = nil }
     }
 
-    private func endTracking() {
-        runId = nil
-        isRunning = false
-        pendingApproval = nil
-        UserDefaults.standard.removeObject(forKey: Self.activeRunKey)
-    }
+    // MARK: Events
 
-    /// On launch or return to foreground: if a run was in flight when the app went away, pick it
-    /// back up. Hermes drops the event queue once a subscriber disconnects, so the run is followed
-    /// by polling its status and then reloading the session transcript.
-    func resumeIfNeeded() async {
-        guard let client else { return }
-        if let task = streamTask, !task.isCancelled, isRunning { return } // stream still alive
-        guard let saved = UserDefaults.standard.stringArray(forKey: Self.activeRunKey), saved.count == 2 else { return }
-        let (savedRun, savedSession) = (saved[0], saved[1])
-        if session?.id != savedSession {
-            let s = (try? await client.getSession(id: savedSession)) ?? HermesSession(id: savedSession)
-            await open(s)
-        }
-        runId = savedRun
-        isRunning = true
-        streamTask = Task { [weak self] in await self?.follow(runId: savedRun, client: client) }
-    }
+    func handle(event e: GatewayEvent) {
+        guard let sid = e.sessionId else { return }
+        var items: [ChatItem] { get { transcripts[sid] ?? [] } set { transcripts[sid] = newValue } }
 
-    /// Poll `GET /v1/runs/{id}` until the run ends, surfacing approval prompts, then refresh history.
-    private func follow(runId: String, client: HermesClient) async {
-        defer { if self.runId == runId { endTracking() } }
-        while !Task.isCancelled {
-            guard let status = try? await client.runStatus(id: runId) else { break } // gone: history is the truth
-            if status.status == "waiting_for_approval", let a = status.approval {
-                let req = ApprovalRequest(runId: runId, fields: a)
-                if pendingApproval != req { pendingApproval = req }
-            } else if pendingApproval?.runId == runId {
-                pendingApproval = nil
-            }
-            if status.isTerminal { break }
-            try? await Task.sleep(for: .seconds(2))
-        }
-        if !Task.isCancelled { await reloadHistory() }
-    }
+        switch e.type {
+        case "message.start":
+            running.insert(sid)
+            statusLines[sid] = nil
+            if let i = items.firstIndex(where: { $0.kind == .user && $0.isQueued }) { items[i].isQueued = false }
 
-    // MARK: Event stream
-
-    private func consume(runId: String, client: HermesClient) async {
-        var sawTerminal = false
-        do {
-            for try await event in client.events(runId: runId) {
-                if Task.isCancelled { break }
-                apply(event, runId: runId)
-                if event.name.hasPrefix("run.") && event.name != "run.started" && event.name != "run.steered" { sawTerminal = true }
-            }
-        } catch {
-            if Task.isCancelled { return }
-            // Connection dropped mid-run: fall back to polling the run instead of giving up.
-            finishStreamingRows()
-            items.append(ChatItem(kind: .notice, text: "Connection lost, following run…"))
-            await follow(runId: runId, client: client)
-            return
-        }
-        finishStreamingRows()
-        if !sawTerminal && !Task.isCancelled {
-            // Stream closed without a terminal event (e.g. events already flushed): resolve by polling.
-            await follow(runId: runId, client: client)
-            return
-        }
-        endTracking()
-    }
-
-    private func apply(_ e: RunEvent, runId: String) {
-        switch e.name {
         case "message.delta":
-            appendAssistant(e.string("delta") ?? "")
+            appendStreaming(kind: .assistant, e.string("text") ?? "", sessionId: sid)
+
+        case "reasoning.delta", "thinking.delta":
+            appendStreaming(kind: .reasoning, e.string("text") ?? "", sessionId: sid)
+
+        case "reasoning.available":
+            let text = e.string("text") ?? ""
+            let streamed = items.last(where: { $0.kind == .assistant })?.text ?? ""
+            if !text.isEmpty, text.trimmingCharacters(in: .whitespacesAndNewlines) != streamed.trimmingCharacters(in: .whitespacesAndNewlines) {
+                finishStreaming(kind: .reasoning, sessionId: sid)
+                items.append(ChatItem(kind: .reasoning, text: text))
+            }
 
         case "message.interim":
-            // Mid-turn commentary; skip when it was already streamed as deltas.
             if e.bool("already_streamed") != true, let t = e.string("text"), !t.isEmpty {
+                finishStreaming(kind: .assistant, sessionId: sid)
                 items.append(ChatItem(kind: .commentary, text: t))
             }
 
-        case "reasoning.available":
-            // Some backends echo the final answer here; skip it when it just repeats streamed text.
-            let text = e.string("text") ?? ""
-            let streamed = items.last(where: { $0.kind == .assistant })?.text ?? ""
-            if text.trimmingCharacters(in: .whitespacesAndNewlines) != streamed.trimmingCharacters(in: .whitespacesAndNewlines) {
-                appendReasoning(text)
-            }
+        case "tool.start":
+            finishStreaming(kind: .reasoning, sessionId: sid)
+            finishStreaming(kind: .assistant, sessionId: sid)
+            let args = e.string("args_text") ?? e.string("preview")
+                ?? (e.payload["args"] as? [String: Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.prettyPrinted, .sortedKeys]) }.map { String(decoding: $0, as: UTF8.self) }
+            items.append(ChatItem(kind: .tool, text: args ?? "", toolId: e.string("tool_id"), toolName: e.string("name"), isStreaming: true))
 
-        case "tool.started":
-            items.append(ChatItem(kind: .tool, text: e.string("preview") ?? "", toolName: e.string("tool"), isStreaming: true))
-
-        case "tool.completed":
-            let name = e.string("tool")
-            if let i = items.lastIndex(where: { $0.kind == .tool && $0.isStreaming && ($0.toolName == name || name == nil) }) {
+        case "tool.complete":
+            let toolId = e.string("tool_id")
+            if let i = items.lastIndex(where: { $0.kind == .tool && ($0.toolId == toolId || (toolId == nil && $0.isStreaming)) }) {
                 items[i].isStreaming = false
-                items[i].toolResult = e.string("preview")
-                items[i].toolError = e.bool("error") ?? false
-                items[i].toolDuration = e.double("duration")
+                let result = e.string("result_text") ?? e.string("summary") ?? (e.payload["result"] as? String)
+                items[i].toolResult = result
+                items[i].toolDuration = e.double("duration_s")
+                items[i].toolError = result.map { $0.hasPrefix("Error") || $0.hasPrefix("BLOCKED") } ?? false
             }
 
-        case "subagent.start":
-            items.append(ChatItem(kind: .notice, text: "Delegating: \(e.string("goal") ?? e.string("preview") ?? "subagent started")"))
-
-        case "subagent.complete":
-            let status = e.string("status") ?? "done"
-            items.append(ChatItem(kind: .notice, text: "Subagent \(status): \(e.string("summary") ?? "")"))
-
-        case "approval.request":
-            pendingApproval = ApprovalRequest(runId: runId, event: e)
-
-        case "approval.responded":
-            pendingApproval = nil
-
-        case "run.completed":
-            finishStreamingRows()
-            if let output = e.string("output"), !output.isEmpty {
-                if let i = items.lastIndex(where: { $0.kind == .assistant }) {
-                    items[i].text = output
+        case "message.complete":
+            finishAll(sessionId: sid)
+            running.remove(sid)
+            statusLines[sid] = nil
+            let final = e.string("text") ?? ""
+            if !final.isEmpty {
+                if let i = items.lastIndex(where: { $0.kind == .assistant }), items.lastIndex(where: { $0.kind == .user }) ?? -1 < i {
+                    items[i].text = final
                 } else {
-                    items.append(ChatItem(kind: .assistant, text: output))
+                    items.append(ChatItem(kind: .assistant, text: final))
                 }
             }
+            switch e.string("status") {
+            case "error": items.append(ChatItem(kind: .error, text: e.string("error") ?? e.string("failure_reason") ?? "Turn failed"))
+            case "interrupted": items.append(ChatItem(kind: .notice, text: "Stopped"))
+            default: break
+            }
+            if let w = e.string("warning"), !w.isEmpty { items.append(ChatItem(kind: .notice, text: w)) }
 
-        case "run.failed", "run.interrupted":
-            finishStreamingRows()
-            items.append(ChatItem(kind: .error, text: e.string("error") ?? "Run \(e.name.dropFirst(4))"))
+        case "status.update":
+            statusLines[sid] = e.string("text")
 
-        case "run.cancelled":
-            finishStreamingRows()
-            items.append(ChatItem(kind: .notice, text: "Stopped"))
+        case "session.title":
+            if let t = e.string("title") { onTitleChanged?(e.string("session_id") ?? sid, t) }
+
+        case "session.info":
+            if let r = e.bool("running") { if r { running.insert(sid) } else { running.remove(sid); finishAll(sessionId: sid) } }
 
         case "error":
-            items.append(ChatItem(kind: .error, text: e.string("message") ?? "Unknown error"))
+            items.append(ChatItem(kind: .error, text: e.string("message") ?? "Error"))
+
+        case "notice":
+            if let m = e.string("message") { items.append(ChatItem(kind: .notice, text: m)) }
+
+        case "subagent.start":
+            items.append(ChatItem(kind: .notice, text: "Delegating: \(e.string("goal") ?? "subagent")"))
+
+        case "subagent.complete":
+            items.append(ChatItem(kind: .notice, text: "Subagent \(e.string("status") ?? "done"): \(e.string("summary") ?? "")"))
+
+        case "request.cancel":
+            let id = e.string("id")
+            if pendingApproval?.id == id { pendingApproval = nil }
+            if pendingClarify?.id == id { pendingClarify = nil }
 
         default:
             break
         }
     }
 
-    private func appendAssistant(_ delta: String) {
-        guard !delta.isEmpty else { return }
-        if let last = items.last, last.kind == .assistant, last.isStreaming {
-            items[items.count - 1].text += delta
-        } else {
-            items.append(ChatItem(kind: .assistant, text: delta, isStreaming: true))
-        }
-    }
-
-    private func appendReasoning(_ text: String) {
+    private func appendStreaming(kind: ChatItem.Kind, _ text: String, sessionId sid: String) {
         guard !text.isEmpty else { return }
-        if let last = items.last, last.kind == .reasoning, last.isStreaming {
+        var items = transcripts[sid] ?? []
+        if let last = items.last, last.kind == kind, last.isStreaming {
             items[items.count - 1].text += text
         } else {
-            items.append(ChatItem(kind: .reasoning, text: text, isStreaming: true))
+            if kind == .assistant { for i in items.indices where items[i].kind == .reasoning { items[i].isStreaming = false } }
+            items.append(ChatItem(kind: kind, text: text, isStreaming: true))
         }
+        transcripts[sid] = items
     }
 
-    private func finishStreamingRows() {
+    private func finishStreaming(kind: ChatItem.Kind, sessionId sid: String) {
+        guard var items = transcripts[sid] else { return }
+        for i in items.indices where items[i].kind == kind && items[i].isStreaming { items[i].isStreaming = false }
+        transcripts[sid] = items
+    }
+
+    private func finishAll(sessionId sid: String) {
+        guard var items = transcripts[sid] else { return }
         for i in items.indices where items[i].isStreaming { items[i].isStreaming = false }
+        transcripts[sid] = items
     }
 
     // MARK: History mapping
 
-    static func items(from messages: [HermesMessage]) -> [ChatItem] {
+    static func items(from messages: [TranscriptMessage]) -> [ChatItem] {
         var out: [ChatItem] = []
-        var toolRowByCallId: [String: Int] = [:]
         for m in messages {
+            if m.displayKind == "hidden" { continue }
             switch m.role {
             case "user":
-                let images = m.imageURLs.compactMap(ImageEncoding.image(fromDataURL:))
-                out.append(ChatItem(kind: .user, text: m.text, images: images))
+                out.append(ChatItem(kind: .user, text: m.text))
             case "assistant":
-                if let r = m.reasoningText { out.append(ChatItem(kind: .reasoning, text: r)) }
+                if let r = m.reasoning, !r.isEmpty { out.append(ChatItem(kind: .reasoning, text: r)) }
                 if !m.text.isEmpty { out.append(ChatItem(kind: .assistant, text: m.text)) }
-                for call in m.toolCalls ?? [] {
-                    out.append(ChatItem(kind: .tool, text: call.function?.arguments ?? "", toolName: call.function?.name, toolCallId: call.id))
-                    if let id = call.id { toolRowByCallId[id] = out.count - 1 }
-                }
             case "tool":
-                if let id = m.toolCallId, let i = toolRowByCallId[id] {
-                    out[i].toolResult = m.text
-                } else {
-                    out.append(ChatItem(kind: .tool, text: "", toolName: m.toolName, toolResult: m.text))
-                }
+                let args = m.args.flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.prettyPrinted, .sortedKeys]) }.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                out.append(ChatItem(kind: .tool, text: args, toolName: m.name, toolResult: m.text))
             default:
-                break // system prompts and hidden rows are not shown
+                if !m.text.isEmpty { out.append(ChatItem(kind: .notice, text: m.text)) }
             }
         }
         return out

@@ -26,11 +26,13 @@ struct ChatRow: View {
                         VStack(alignment: .leading, spacing: 2) {
                             if item.isSteer {
                                 Label("Steer", systemImage: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+                            } else if item.isQueued {
+                                Label("Queued", systemImage: "clock").font(.caption2).foregroundStyle(.secondary)
                             }
                             Text(verbatim: item.text).textSelection(.enabled)
                         }
                         .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(Color.accentColor.opacity(item.isSteer ? 0.10 : 0.18), in: RoundedRectangle(cornerRadius: 16))
+                        .background(Color.accentColor.opacity(item.isSteer || item.isQueued ? 0.10 : 0.18), in: RoundedRectangle(cornerRadius: 16))
                     }
                 }
             }
