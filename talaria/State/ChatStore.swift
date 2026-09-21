@@ -33,6 +33,8 @@ final class ChatStore {
     private var running: Set<String> = []
     /// Transient status line per live session (compacting, tool progress, …).
     private var statusLines: [String: String] = [:]
+    /// Model and reasoning effort per live session, from `session.info`.
+    private var liveInfo: [String: (model: String, effort: String)] = [:]
     var isLoadingHistory = false
     var pendingApproval: ApprovalRequest?
     var pendingClarify: ClarifyRequest?
@@ -50,6 +52,23 @@ final class ChatStore {
     }
     var isRunning: Bool { session.map { running.contains($0.liveId) } ?? false }
     var statusText: String? { session.flatMap { statusLines[$0.liveId] } }
+
+    /// "glm-5.3 · Med" style label for the composer pill; nil until a session reports it.
+    var modelLabel: String? {
+        guard let info = session.flatMap({ liveInfo[$0.liveId] }) ?? liveInfo.values.first else { return nil }
+        let effort: String
+        switch info.effort.lowercased() {
+        case "": effort = ""
+        case "medium": effort = "Med"
+        default: effort = info.effort.prefix(1).uppercased() + info.effort.dropFirst()
+        }
+        return effort.isEmpty ? info.model : "\(info.model) · \(effort)"
+    }
+
+    private func recordInfo(_ info: [String: Any]?, for liveId: String) {
+        guard let info, let model = info["model"] as? String, !model.isEmpty else { return }
+        liveInfo[liveId] = (model, info["reasoning_effort"] as? String ?? "")
+    }
 
     // MARK: Session lifecycle
 
@@ -100,6 +119,7 @@ final class ChatStore {
             }
         }
         transcripts[liveId] = rows
+        recordInfo(r["info"] as? [String: Any], for: liveId)
         if isRunning { running.insert(liveId) } else { running.remove(liveId) }
         if let pa = r["pending_approval"] as? [String: Any], pendingApproval == nil {
             // The open server request itself arrives via open_requests; this only pre-warns.
@@ -130,6 +150,7 @@ final class ChatStore {
                 let created = HermesSession(id: stored, liveId: liveId)
                 transcripts[liveId] = transcripts[Self.draftKey] ?? []
                 transcripts[Self.draftKey] = []
+                recordInfo(r["info"] as? [String: Any], for: liveId)
                 session = created
                 UserDefaults.standard.set(stored, forKey: Self.lastSessionKey)
                 onSessionCreated?(created)
@@ -340,6 +361,7 @@ final class ChatStore {
             if let t = e.string("title") { onTitleChanged?(e.string("session_id") ?? sid, t) }
 
         case "session.info":
+            recordInfo(e.payload, for: sid)
             if let r = e.bool("running") { if r { running.insert(sid) } else { running.remove(sid); finishAll(sessionId: sid) } }
 
         case "error":

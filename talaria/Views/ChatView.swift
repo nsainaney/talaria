@@ -23,7 +23,6 @@ struct ChatView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 4)
             }
             if draft.hasPrefix("/") { slashPopup }
-            if !attachments.isEmpty { attachmentStrip }
             composer
         }
         .onChange(of: model.chat.session?.id) { _, _ in draft = ""; attachments = [] }
@@ -174,52 +173,74 @@ struct ChatView: View {
                             }
                             .padding(4)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color(.secondarySystemBackground))
+                            .background(Color(.tertiarySystemFill))
                         }
                     }
-                        .frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(alignment: .topTrailing) {
-                            Button { attachments.remove(at: i) } label: {
-                                Image(systemName: "xmark.circle.fill").font(.body)
-                                    .foregroundStyle(.white, .black.opacity(0.6))
-                            }
-                            .padding(2)
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(alignment: .topTrailing) {
+                        Button { attachments.remove(at: i) } label: {
+                            Image(systemName: "xmark.circle.fill").font(.body)
+                                .foregroundStyle(.white, .black.opacity(0.6))
                         }
+                        .padding(2)
+                    }
                 }
             }
-            .padding(.horizontal).padding(.vertical, 6)
         }
-        .background(.bar)
     }
 
+    private var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty }
+
+    /// Card-style composer: text on top, controls row below (attach, model pill, send/stop).
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            Menu {
-                Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
-                if CameraPicker.isAvailable {
-                    Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
-                }
-                Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
-            } label: {
-                Image(systemName: "plus.circle").font(.title2)
-            }
-            .disabled(chat.isRunning || !model.gateway.isConnected)
+        VStack(alignment: .leading, spacing: 10) {
+            if !attachments.isEmpty { attachmentStrip }
             TextField(chat.isRunning ? "Queue a message…" : "Message Hermes", text: $draft, axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...8)
+                .font(.title3)
                 .focused($composerFocused)
                 .autocorrectionDisabled(draft.hasPrefix("/"))
-            if chat.isRunning && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button { Task { await chat.stop() } } label: {
-                    Image(systemName: "stop.circle.fill").font(.title2)
+            HStack(spacing: 10) {
+                Menu {
+                    Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+                    if CameraPicker.isAvailable {
+                        Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
+                    }
+                    Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
+                } label: {
+                    Image(systemName: "plus").font(.body.weight(.medium))
+                        .frame(width: 36, height: 36)
+                        .background(Color(.tertiarySystemFill), in: Circle())
                 }
-                .tint(.red)
-            } else if chat.isRunning {
-                // Send queues behind the running turn; long-press for steer / redirect.
-                Button { Task { await submitWhileRunning(.queue) } } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                .disabled(chat.isRunning || !model.gateway.isConnected)
+                if let label = chat.modelLabel {
+                    Text(label).font(.subheadline)
+                        .padding(.horizontal, 12).frame(height: 36)
+                        .background(Color(.tertiarySystemFill), in: Capsule())
+                        .lineLimit(1)
                 }
+                Spacer()
+                primaryButton
+            }
+        }
+        .padding(14)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color(.separator).opacity(0.5)))
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 2)
+        .padding(.horizontal, 10).padding(.bottom, 6)
+        .background(.clear)
+    }
+
+    /// Stop while a turn runs and nothing is typed; otherwise send (queued during a run).
+    @ViewBuilder private var primaryButton: some View {
+        if chat.isRunning && !hasDraft {
+            Button { Task { await chat.stop() } } label: {
+                Image(systemName: "stop.fill").font(.body.weight(.bold)).foregroundStyle(.white)
+                    .frame(width: 40, height: 40).background(Color.red, in: Circle())
+            }
+        } else if chat.isRunning {
+            Button { Task { await submitWhileRunning(.queue) } } label: { sendGlyph(enabled: true) }
                 .contextMenu {
                     Button { Task { await submitWhileRunning(.queue) } } label: { Label("Queue after this turn", systemImage: "text.append") }
                     Button { Task { await submitWhileRunning(.steer) } } label: { Label("Steer the running turn", systemImage: "arrow.turn.down.right") }
@@ -227,15 +248,19 @@ struct ChatView: View {
                     Divider()
                     Button(role: .destructive) { Task { await chat.stop() } } label: { Label("Stop", systemImage: "stop.circle") }
                 }
-            } else {
-                Button { Task { await sendDraft() } } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
-                }
-                .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || !model.gateway.isConnected)
-            }
+        } else {
+            let enabled = hasDraft && model.gateway.isConnected
+            Button { Task { await sendDraft() } } label: { sendGlyph(enabled: enabled) }
+                .disabled(!enabled)
         }
-        .padding(.horizontal).padding(.vertical, 8)
-        .background(.bar)
+    }
+
+    private func sendGlyph(enabled: Bool) -> some View {
+        Image(systemName: "arrow.up").font(.body.weight(.bold))
+            .foregroundStyle(enabled ? Color.white : Color.secondary)
+            .frame(width: 40, height: 40)
+            .background(enabled ? Color.accentColor : Color(.tertiarySystemFill), in: Circle())
+            .animation(.easeInOut(duration: 0.15), value: enabled)
     }
 
     private enum RunningSubmit { case queue, steer, redirect }
