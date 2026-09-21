@@ -11,6 +11,7 @@ struct ChatView: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
+    @State private var showMeeting = false
     @FocusState private var composerFocused: Bool
 
     private var chat: ChatStore { model.chat }
@@ -51,6 +52,7 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { attachments.append(.image($0)) }.ignoresSafeArea()
         }
+        .sheet(isPresented: $showMeeting) { MeetingView() }
         .onReceive(NotificationCenter.default.publisher(for: .invokeSkill)) { note in
             guard let name = note.object as? String else { return }
             draft = "/\(name) "
@@ -209,6 +211,10 @@ struct ChatView: View {
                         Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
                     }
                     Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
+                    if model.settings.voiceEnabled {
+                        Divider()
+                        Button { showMeeting = true } label: { Label("Record meeting", systemImage: "record.circle") }
+                    }
                 } label: {
                     Image(systemName: "plus").font(.body.weight(.medium))
                         .frame(width: 36, height: 36)

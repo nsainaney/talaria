@@ -8,6 +8,14 @@
 	<string>Talk to Hermes instead of typing.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Your speech is transcribed on this phone and sent to Hermes as text.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to send to Hermes.</string>
 	<key>NSAppTransportSecurity</key>

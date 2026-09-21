@@ -36,3 +36,27 @@ Pinned sessions and skills are stored locally in UserDefaults, not on the server
 - `talaria/Views` – `RootView`, `ChatView`, `ChatRow`, `SessionsSidebar`, `SkillsView`, `SettingsView`, `ApprovalView` (+ `ClarifyView`)
 
 `Info.plist` allows plain-HTTP loads so LAN dashboards work; deployment target is iOS 26.5.
+
+## Voice (branch `voice`)
+
+Everything runs on the phone; nothing new is needed on the server.
+
+- **Talk to Hermes.** Tap the microphone in the composer. Speech is recognised on the phone and
+  sent as text after a short pause; replies are spoken sentence by sentence as they stream, with
+  code blocks and markdown stripped. Talk over a reply to stop it; say "stop" to interrupt a
+  running turn. Permission and clarify requests are read aloud and take a spoken *allow*,
+  *always* or *deny* (the on-screen popup still works).
+- **Record a meeting.** Composer `+` menu → *Record meeting*. Audio is saved to
+  Files › Talaria › Meetings and transcribed live on the phone in timestamped segments,
+  including with the screen locked. *Send to Hermes* attaches the transcript with an
+  instruction. If a `meeting-digest` skill exists on the server the app invokes it instead.
+- **Server skill.** Copy `hermes/skills/meeting-digest/` to
+  `~/.hermes/skills/productivity/meeting-digest/` on the Hermes host (on prometheus that home is
+  `/mnt/space/services/hermes/state`) and reload skills. It uses the `memory` and
+  `cronjob_manage` tools and asks before creating reminders.
+- **Turning it off.** Settings → *Voice mode* hides the microphone and the meeting entry. To
+  drop the feature entirely, delete the branch: `git checkout main && git branch -D voice`.
+
+Known limits: no speaker labels, English-first, and replies from Hermes take one to two seconds
+plus whatever its tools take. The voice engine is `SFSpeechRecognizer`; iOS 26's
+`SpeechAnalyzer` would be the upgrade for long meetings.
