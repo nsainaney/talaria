@@ -36,6 +36,7 @@ final class VoiceController {
         self.skills = skills
         self.settings = settings
         speaker.auth = { [weak settings] in settings?.auth }
+        speaker.output = recognizer
         recognizer.onText = { [weak self] in self?.heard($0) }
         recognizer.onError = { [weak self] in self?.error = $0.localizedDescription }
         speaker.onFinished = { [weak self] in self?.finishedSpeaking() }
@@ -75,7 +76,7 @@ final class VoiceController {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != transcript else { return }
         transcript = trimmed
-        if state == .speaking, Self.wordCount(trimmed) >= 2 {
+        if state == .speaking, !speaker.isPreparing, Self.wordCount(trimmed) >= 2 {
             // Barge-in: stop talking at once and drop the rest of this reply.
             speaker.stop()
             splitter = SpeechSentenceSplitter()
@@ -115,11 +116,11 @@ final class VoiceController {
     private static let stopWords: Set<String> = ["stop", "cancel", "nevermind", "never mind", "halt"]
 
     private func submit(_ text: String) async {
+        if Self.isStopWord(text) {
+            if chat.isRunning { await chat.stop() }
+            return
+        }
         if chat.isRunning {
-            if Self.isStopWord(text) {
-                await chat.stop()
-                return
-            }
             // A stray word while Hermes works is noise, not a redirection.
             guard Self.wordCount(text) >= 2 else { return }
         }
@@ -179,6 +180,8 @@ final class VoiceController {
 
     /// Why the server voice was not used this session, if it failed.
     var serverVoiceError: String? { speaker.lastError }
+    /// Speaking, but the audio has not arrived from the server yet.
+    var isPreparingVoice: Bool { state == .speaking && speaker.isPreparing }
 
     private func finishedSpeaking() {
         guard state == .speaking else { return }

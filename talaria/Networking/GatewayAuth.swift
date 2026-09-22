@@ -87,14 +87,16 @@ struct GatewayAuth {
 
     /// Synthesize text with the dashboard's configured TTS provider; returns the audio bytes
     /// (WAV for Pocket TTS, MP3/OGG for others). Signs in again once if the session lapsed.
-    func speak(_ text: String) async throws -> Data {
+    struct Audio { let data: Data; let mime: String }
+
+    func speak(_ text: String) async throws -> Audio {
         if let d = try await postSpeak(text) { return d }
         try await login()
         guard let d = try await postSpeak(text) else { throw GatewayAuthError.badCredentials }
         return d
     }
 
-    private func postSpeak(_ text: String) async throws -> Data? {
+    private func postSpeak(_ text: String) async throws -> Audio? {
         var req = request("POST", "/api/audio/speak")
         req.timeoutInterval = 90
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -111,7 +113,7 @@ struct GatewayAuth {
               let audio = Data(base64Encoded: String(url[url.index(after: comma)...])) else {
             throw GatewayAuthError.http(code, "unexpected speak response")
         }
-        return audio
+        return Audio(data: audio, mime: obj["mime_type"] as? String ?? "audio/wav")
     }
 
     /// Ends the dashboard session and drops its cookies. Caller clears the Keychain.

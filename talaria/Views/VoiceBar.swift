@@ -11,7 +11,7 @@ struct VoiceBar: View {
                 Image(systemName: icon(for: voice.state))
                     .font(.body.weight(.semibold))
                     .foregroundStyle(voice.state == .listening ? Color.accentColor : Color.secondary)
-                    .symbolEffect(.variableColor.iterative, isActive: voice.state == .listening || voice.state == .speaking)
+                    .symbolEffect(.variableColor.iterative, isActive: voice.state == .listening || (voice.state == .speaking && !voice.isPreparingVoice))
                     .frame(width: 22)
                 Text(label(for: voice)).font(.subheadline.weight(.medium))
                 Spacer()
@@ -54,7 +54,7 @@ struct VoiceBar: View {
         case .idle: return "Voice off"
         case .listening: return "Listening"
         case .thinking: return "Hermes is working…"
-        case .speaking: return "Speaking"
+        case .speaking: return v.isPreparingVoice ? "Getting the voice ready…" : "Speaking"
         }
     }
 }
