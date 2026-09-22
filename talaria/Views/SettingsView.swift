@@ -44,6 +44,7 @@ struct SettingsView: View {
                     Toggle("Voice mode", isOn: $settings.voiceEnabled)
                     if settings.voiceEnabled {
                         Toggle("Hermes voice (server)", isOn: $settings.serverVoice)
+                        Toggle("Listen while Hermes speaks", isOn: $settings.voiceBargeIn)
                         Toggle("Low reasoning while talking", isOn: $settings.voiceFastModel)
                         if settings.voiceFastModel {
                             TextField("Model alias (optional, e.g. fast)", text: $settings.voiceModelAlias)
@@ -57,7 +58,7 @@ struct SettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("Listening happens on this phone. With Hermes voice on, replies are synthesized by the server's TTS provider (Pocket TTS on prometheus) and the phone voice is used only if that fails. Talk over a reply to stop it; permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices. Low reasoning: while voice mode is on the session answers with less thinking time and switches back afterwards. Naming a model alias also swaps the model for the whole turn, tools included, so leave it empty unless you want the faster, weaker model doing the work.")
+                    Text("Listening happens on this phone. With Hermes voice on, replies are synthesized by the server's TTS provider (Pocket TTS on prometheus) and the phone voice is used only if that fails. Talk over a reply to stop it; permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices. Listen while Hermes speaks lets you talk over a reply; turn it off if the phone keeps hearing itself. Low reasoning: while voice mode is on the session answers with less thinking time and switches back afterwards. Naming a model alias also swaps the model for the whole turn, tools included, so leave it empty unless you want the faster, weaker model doing the work.")
                 }
                 Section {
                     Button("Sign out", role: .destructive) {

@@ -12,6 +12,7 @@ final class ServerSettings {
     private static let serverVoiceKey = "talaria.serverVoice"
     private static let fastVoiceKey = "talaria.voiceFastModel"
     private static let voiceAliasKey = "talaria.voiceModelAlias"
+    private static let bargeInKey = "talaria.voiceBargeIn"
 
     var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: Self.urlKey) } }
     var username: String { didSet { UserDefaults.standard.set(username, forKey: Self.userKey) } }
@@ -25,6 +26,8 @@ final class ServerSettings {
     /// Optional model alias for spoken turns; empty keeps the session's model. Note the alias runs the
     /// whole agent loop (tools included), not just the chat.
     var voiceModelAlias: String { didSet { UserDefaults.standard.set(voiceModelAlias, forKey: Self.voiceAliasKey) } }
+    /// Keep listening while Hermes speaks so you can talk over it. Off: the mic is ignored until it finishes.
+    var voiceBargeIn: Bool { didSet { UserDefaults.standard.set(voiceBargeIn, forKey: Self.bargeInKey) } }
 
     init() {
         serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? "http://127.0.0.1:9119"
@@ -34,6 +37,7 @@ final class ServerSettings {
         serverVoice = UserDefaults.standard.object(forKey: Self.serverVoiceKey) as? Bool ?? true
         voiceFastModel = UserDefaults.standard.object(forKey: Self.fastVoiceKey) as? Bool ?? true
         voiceModelAlias = UserDefaults.standard.string(forKey: Self.voiceAliasKey) ?? ""
+        voiceBargeIn = UserDefaults.standard.object(forKey: Self.bargeInKey) as? Bool ?? true
     }
 
     var isConfigured: Bool { url != nil && !username.isEmpty && !password.isEmpty }

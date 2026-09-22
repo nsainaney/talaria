@@ -29,6 +29,8 @@ final class VoiceController {
     /// Session switched to the fast alias for voice, and what to restore afterwards.
     private var fastAppliedTo: String?
     private var restoreTo: (model: String, effort: String)?
+    /// Words the phone itself said recently, to reject its own speech coming back through the mic.
+    private var recentlySpoken: [(at: Date, words: Set<String>)] = []
     private unowned let chat: ChatStore
     private let skills: SkillsStore
     private let settings: ServerSettings
@@ -82,6 +84,10 @@ final class VoiceController {
     private func heard(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != transcript else { return }
+        if speaker.isSpeaking, !speaker.isPreparing, !settings.voiceBargeIn {
+            return // mic ignored while Hermes talks; the utterance is reset when it finishes
+        }
+        if isEcho(trimmed) { return }
         transcript = trimmed
         if state == .speaking, !speaker.isPreparing, Self.wordCount(trimmed) >= 2 {
             // Barge-in: stop talking at once and drop the rest of this reply.
@@ -103,7 +109,7 @@ final class VoiceController {
         let text = transcript
         transcript = ""
         recognizer.nextUtterance()
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, !isEcho(text) else { return }
         if speaker.isSpeaking {
             // Anything said while Hermes talks ends the reply, even a single word.
             speaker.stop()
@@ -211,7 +217,20 @@ final class VoiceController {
 
     private func say(_ text: String) {
         state = .speaking
+        recentlySpoken.append((Date(), Set(Self.words(text))))
         speaker.speak(text)
+    }
+
+    /// True when most of the words were spoken by the phone in the last 20 seconds: its own
+    /// voice coming back through the microphone rather than the person.
+    private func isEcho(_ text: String) -> Bool {
+        let cutoff = Date().addingTimeInterval(-20)
+        recentlySpoken.removeAll { $0.at < cutoff }
+        let heard = Self.words(text)
+        guard !heard.isEmpty, !recentlySpoken.isEmpty else { return false }
+        let spoken = recentlySpoken.reduce(into: Set<String>()) { $0.formUnion($1.words) }
+        let overlap = heard.filter { spoken.contains($0) }.count
+        return Double(overlap) / Double(heard.count) >= 0.6
     }
 
     /// Why the server voice was not used this session, if it failed.
@@ -221,6 +240,12 @@ final class VoiceController {
 
     private func finishedSpeaking() {
         guard state == .speaking else { return }
+        if !settings.voiceBargeIn {
+            // Drop whatever the mic picked up while the phone was talking.
+            silenceTask?.cancel()
+            transcript = ""
+            recognizer.nextUtterance()
+        }
         state = chat.isRunning ? .thinking : .listening
     }
 
