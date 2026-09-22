@@ -307,7 +307,8 @@ final class ChatStore {
     func setSessionConfig(_ key: String, _ value: String) async -> Bool {
         guard let client, let sid = session?.liveId else { return false }
         do {
-            _ = try await client.request("config.set", ["key": key, "value": value, "session_id": sid], timeout: 60)
+            // scope is explicit: without a resolvable session the server would write the global config.
+            _ = try await client.request("config.set", ["key": key, "value": value, "session_id": sid, "scope": "session"], timeout: 60)
             return true
         } catch {
             transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Could not set \(key) to \(value): \(error.localizedDescription)"))

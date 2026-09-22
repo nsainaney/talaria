@@ -76,6 +76,21 @@ final class SkillsStore {
         return commands.filter { q.isEmpty || $0.name.lowercased().hasPrefix(q) }
     }
 
+    /// The bare `/` listing is capped to the most-used commands, so ask the server again as the
+    /// person types; merges any new commands into `commands`.
+    func completeCommands(prefix: String, client: GatewayClient) async {
+        guard client.isConnected, !prefix.isEmpty,
+              let r = try? await client.request("complete.slash", ["text": "/" + prefix], timeout: 15) else { return }
+        var merged = commands
+        for item in r["items"] as? [[String: Any]] ?? [] where item["kind"] as? String == "command" {
+            let raw = (item["text"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let name = raw.hasPrefix("/") ? String(raw.dropFirst()) : raw
+            guard !name.isEmpty, !merged.contains(where: { $0.name == name }) else { continue }
+            merged.append(SlashCommand(name: name, description: item["meta"] as? String))
+        }
+        if merged.count != commands.count { commands = merged }
+    }
+
     func skill(named name: String) -> Skill? {
         skills.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }

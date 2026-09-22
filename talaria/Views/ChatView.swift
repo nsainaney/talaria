@@ -28,6 +28,11 @@ struct ChatView: View {
             composer
         }
         .onChange(of: model.chat.session?.id) { _, _ in draft = ""; attachments = [] }
+        .task(id: slashQuery) {
+            guard let q = slashQuery else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            await model.skills.completeCommands(prefix: q, client: model.gateway)
+        }
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task {
@@ -130,6 +135,12 @@ struct ChatView: View {
             }
             .onTapGesture { composerFocused = false }
         }
+    }
+
+    /// The command name being typed after `/`, or nil when the draft is not a slash command.
+    private var slashQuery: String? {
+        guard draft.hasPrefix("/"), !draft.contains(" ") else { return nil }
+        return String(draft.dropFirst())
     }
 
     private var slashPopup: some View {
