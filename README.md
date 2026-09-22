@@ -56,11 +56,14 @@ Everything runs on the phone; nothing new is needed on the server.
   `cronjob_manage` tools and asks before creating reminders.
 - **Server voice (Pocket TTS).** With *Hermes voice* on in Settings, each spoken sentence is
   fetched from the dashboard's `POST /api/audio/speak`, which runs the profile's TTS provider.
-  On prometheus that is Kyutai Pocket TTS via the command provider: bundle, model and `say`
-  wrapper in `/mnt/space/services/hermes/pocket-tts/`, provider block in nix-config
-  `services/hermes.nix` (`tts.provider = pocket`, voice `alba`). About 1.7 s to the first
-  sentence (model load per call); later sentences fetch while the current one plays. If the
+  On prometheus that is Kyutai's reference Pocket TTS served warm by the `pocket-tts` docker
+  container (image built from `hermes/pocket-tts/Dockerfile`, port 127.0.0.1:8131) through the
+  `say-http` wrapper in `/mnt/space/services/hermes/pocket-tts/`; provider block in nix-config
+  `services/hermes.nix`. A warm sentence takes 0.3 to 1 s. Change the voice by editing
+  `voice = "alba"` there and deploying; the English voices are listed in that block. If the
   server cannot synthesize, the phone voice takes over for the rest of the reply.
+  (The `pocket-tts.cpp` bundle from the benchmark is still there as `say`, but its
+  end-of-speech detection babbles on short text, so it is no longer used.)
 - **Turning it off.** Settings → *Voice mode* hides the microphone and the meeting entry. To
   drop the feature entirely, delete the branch: `git checkout main && git branch -D voice`.
 
