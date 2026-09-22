@@ -43,8 +43,8 @@ Everything runs on the phone; nothing new is needed on the server.
 
 - **Talk to Hermes.** Tap the microphone in the composer. Speech is recognised on the phone and
   sent as text after a short pause; replies are spoken sentence by sentence as they stream, with
-  code blocks and markdown stripped. Talk over a reply to stop it; say "stop" to interrupt a
-  running turn. Permission and clarify requests are read aloud and take a spoken *allow*,
+  code blocks and markdown stripped. Talk over a reply and it goes quiet and listens; anything said while Hermes is working is
+  steered into the running turn (queued if the turn is too far along); say "stop" to interrupt. Permission and clarify requests are read aloud and take a spoken *allow*,
   *always* or *deny* (the on-screen popup still works).
 - **Record a meeting.** Composer `+` menu → *Record meeting*. Audio is saved to
   Files › Talaria › Meetings and transcribed live on the phone in timestamped segments,

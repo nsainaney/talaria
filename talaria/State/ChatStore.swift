@@ -267,15 +267,18 @@ final class ChatStore {
     }
 
     /// Queue a message to run after the current turn (FIFO, never a live correction).
-    func enqueue(_ text: String) async {
+    func enqueue(_ text: String, voice: VoiceTurn? = nil) async {
         guard let client, let sid = session?.liveId, isRunning else { return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         do {
             var item = ChatItem(kind: .user, text: text)
             item.isQueued = true
+            item.isVoice = voice != nil
             transcripts[sid, default: []].append(item)
-            _ = try await client.request("prompt.submit", ["session_id": sid, "text": text, "queued": true], timeout: 60)
+            var params: [String: Any] = ["session_id": sid, "text": text, "queued": true]
+            if let voice { params.merge(voice.params) { a, _ in a } }
+            _ = try await client.request("prompt.submit", params, timeout: 60)
         } catch {
             self.error = error.localizedDescription
         }
@@ -299,19 +302,21 @@ final class ChatStore {
         }
     }
 
-    /// Inject guidance into the running turn without stopping it.
-    func steer(_ text: String) async {
-        guard let client, let sid = session?.liveId, isRunning else { return }
+    /// Inject guidance into the running turn without stopping it. Returns false when the server
+    /// would not take it (turn too far along), so the caller can queue instead.
+    @discardableResult
+    func steer(_ text: String, viaVoice: Bool = false) async -> Bool {
+        guard let client, let sid = session?.liveId, isRunning else { return false }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else { return false }
         do {
             let r = try await client.request("session.steer", ["session_id": sid, "text": text], timeout: 30)
-            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text, isSteer: true))
-            if r["status"] as? String == "rejected" {
-                transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Steer rejected"))
-            }
+            if r["status"] as? String == "rejected" { return false }
+            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text, isSteer: true, isVoice: viaVoice))
+            return true
         } catch {
             self.error = error.localizedDescription
+            return false
         }
     }
 

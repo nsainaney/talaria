@@ -59,7 +59,7 @@ struct VoiceBar: View {
         switch v.state {
         case .idle: return "Voice off"
         case .listening: return "Listening"
-        case .thinking: return "Hermes is working…"
+        case .thinking: return "Hermes is working… talk to add to it, or say stop"
         case .speaking: return v.isPreparingVoice ? "Getting the voice ready…" : "Speaking"
         }
     }

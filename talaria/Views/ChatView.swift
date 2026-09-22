@@ -286,7 +286,7 @@ struct ChatView: View {
         draft = ""
         switch mode {
         case .queue: await chat.enqueue(text)
-        case .steer: await chat.steer(text)
+        case .steer: _ = await chat.steer(text)
         case .redirect: await chat.redirect(text)
         }
     }

@@ -139,7 +139,10 @@ final class VoiceController {
         interruptedLastReply = false
         if !chat.isRunning { await applyFastModelIfNeeded() }
         if chat.isRunning {
-            await chat.redirect(text, voice: turn)
+            // Add to what Hermes is doing rather than cutting it off; 'stop' is the way to interrupt.
+            if await chat.steer(text, viaVoice: true) == false {
+                await chat.enqueue(text, voice: turn)
+            }
         } else {
             await chat.send(text, skills: skills, voice: turn)
         }
