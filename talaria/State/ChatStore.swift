@@ -225,11 +225,32 @@ final class ChatStore {
 
             transcripts[sid, default: []].append(ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name), isVoice: voice != nil))
 
-            // `/skill args` goes through the server's slash dispatcher, like the TUI.
+            // `/skill args` goes through the server's slash dispatcher, like the TUI; a few
+            // built-ins (/model, /reasoning, …) are per-session settings, not prompts.
             var submitText = body
             if body.hasPrefix("/") {
                 let name = String(body.dropFirst().prefix { !$0.isWhitespace })
                 let arg = String(body.dropFirst(1 + name.count)).trimmingCharacters(in: .whitespaces)
+                if Self.sessionSettingCommands.contains(name) {
+                    transcripts[sid, default: []].removeLast() // not a message; show the outcome instead
+                    if arg.isEmpty {
+                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "/\(name) needs a value"))
+                    } else if await setSessionConfig(name, arg) {
+                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "\(name) set to \(arg)"))
+                    }
+                    return
+                }
+                if skills?.skill(named: name) == nil, skills?.commands.contains(where: { $0.name == name }) == true {
+                    // Other built-ins (/help, /status, …) run server-side; the output is a notice.
+                    transcripts[sid, default: []].removeLast()
+                    do {
+                        let r = try await client.request("slash.exec", ["command": text, "session_id": sid], timeout: 120)
+                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: r["output"] as? String ?? "(no output)"))
+                    } catch {
+                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "/\(name): \(error.localizedDescription)"))
+                    }
+                    return
+                }
                 if let skills, skills.skill(named: name) != nil {
                     let d = try await client.request("command.dispatch", ["name": name, "arg": arg, "session_id": sid], timeout: 60)
                     switch d["type"] as? String {
@@ -277,6 +298,9 @@ final class ChatStore {
         guard session == nil, let client, client.isConnected else { return }
         do { try await createSession(client) } catch { self.error = error.localizedDescription }
     }
+
+    /// Slash commands that map to `config.set` on the session rather than a prompt.
+    static let sessionSettingCommands: Set<String> = ["model", "reasoning", "fast", "yolo", "approval_mode", "verbose"]
 
     /// Per-session runtime setting, the same as the TUI's `/model` and `/reasoning`.
     @discardableResult

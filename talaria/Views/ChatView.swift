@@ -135,10 +135,25 @@ struct ChatView: View {
     private var slashPopup: some View {
         let query = String(draft.dropFirst()).components(separatedBy: " ").first ?? ""
         let matches = Array(model.skills.filtered(query).prefix(8))
+        let commands = Array(model.skills.commands(matching: query).prefix(6))
         return Group {
-            if !matches.isEmpty {
+            if !matches.isEmpty || !commands.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        ForEach(commands) { cmd in
+                            Button { draft = "/\(cmd.name) " } label: {
+                                HStack {
+                                    Image(systemName: "terminal").font(.caption2).foregroundStyle(.secondary)
+                                    Text(cmd.name).font(.body.monospaced())
+                                    Text(cmd.description ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Spacer()
+                                }
+                                .padding(.horizontal).padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Divider()
+                        }
                         ForEach(matches) { skill in
                             Button { draft = "/\(skill.name) " } label: {
                                 HStack {
