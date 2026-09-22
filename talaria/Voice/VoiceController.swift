@@ -185,12 +185,15 @@ final class VoiceController {
     private func restoreModel() {
         guard let sid = fastAppliedTo else { return }
         fastAppliedTo = nil
-        guard chat.session?.liveId == sid, let r = restoreTo else { return }
+        guard chat.session?.liveId == sid else { return }
+        let previous = restoreTo
         restoreTo = nil
         let switchedModel = !settings.voiceModelAlias.trimmingCharacters(in: .whitespaces).isEmpty
+        // Nothing recorded (session.info had not arrived yet) means the configured default, medium.
+        let effort = previous.map(\.effort).flatMap { $0.isEmpty ? nil : $0.lowercased() } ?? "medium"
         Task {
-            if switchedModel, !r.model.isEmpty { _ = await chat.setSessionConfig("model", r.model) }
-            _ = await chat.setSessionConfig("reasoning", r.effort.isEmpty ? "medium" : r.effort)
+            if switchedModel, let m = previous?.model, !m.isEmpty { _ = await chat.setSessionConfig("model", m) }
+            _ = await chat.setSessionConfig("reasoning", effort)
         }
     }
 
