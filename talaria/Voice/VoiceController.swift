@@ -24,6 +24,9 @@ final class VoiceController {
     private var muteReply = false
     /// Whether the person cut the last reply off; told to Hermes on the next turn.
     private var interruptedLastReply = false
+    /// Session switched to the fast alias for voice, and what to restore afterwards.
+    private var fastAppliedTo: String?
+    private var restoreTo: (model: String, effort: String)?
     private unowned let chat: ChatStore
     private let skills: SkillsStore
     private let settings: ServerSettings
@@ -60,6 +63,7 @@ final class VoiceController {
     }
 
     func stop() {
+        restoreModel()
         silenceTask?.cancel()
         workingCueTask?.cancel()
         speaker.stop()
@@ -130,12 +134,37 @@ final class VoiceController {
         scheduleWorkingCue()
         let turn = ChatStore.VoiceTurn(context: chat.recentExchange(), interrupted: interruptedLastReply)
         interruptedLastReply = false
+        if !chat.isRunning { await applyFastModelIfNeeded() }
         if chat.isRunning {
             await chat.redirect(text, voice: turn)
         } else {
             await chat.send(text, skills: skills, voice: turn)
         }
         if chat.error != nil, state == .thinking { state = .listening }
+    }
+
+    // MARK: Fast model while talking
+
+    private func applyFastModelIfNeeded() async {
+        guard settings.voiceFastModel else { return }
+        let alias = settings.voiceModelAlias.trimmingCharacters(in: .whitespaces)
+        guard !alias.isEmpty else { return }
+        await chat.ensureSession()
+        guard let sid = chat.session?.liveId, fastAppliedTo != sid else { return }
+        restoreTo = chat.currentInfo
+        if await chat.setSessionConfig("model", alias) { fastAppliedTo = sid }
+        _ = await chat.setSessionConfig("reasoning", "low")
+    }
+
+    private func restoreModel() {
+        guard let sid = fastAppliedTo else { return }
+        fastAppliedTo = nil
+        guard chat.session?.liveId == sid, let r = restoreTo, !r.model.isEmpty else { return }
+        restoreTo = nil
+        Task {
+            _ = await chat.setSessionConfig("model", r.model)
+            if !r.effort.isEmpty { _ = await chat.setSessionConfig("reasoning", r.effort) }
+        }
     }
 
     /// A short spoken cue when a turn runs long with nothing said yet.

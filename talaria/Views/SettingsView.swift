@@ -44,6 +44,11 @@ struct SettingsView: View {
                     Toggle("Voice mode", isOn: $settings.voiceEnabled)
                     if settings.voiceEnabled {
                         Toggle("Hermes voice (server)", isOn: $settings.serverVoice)
+                        Toggle("Fast model while talking", isOn: $settings.voiceFastModel)
+                        if settings.voiceFastModel {
+                            TextField("Model alias", text: $settings.voiceModelAlias)
+                                .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        }
                         Picker(settings.serverVoice ? "Fallback voice" : "Voice", selection: $voiceId) {
                             Text("Automatic (best installed)").tag("")
                             ForEach(Speaker.availableVoices(), id: \.identifier) { v in
@@ -52,7 +57,7 @@ struct SettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("Listening happens on this phone. With Hermes voice on, replies are synthesized by the server's TTS provider (Pocket TTS on prometheus) and the phone voice is used only if that fails. Talk over a reply to stop it; permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices.")
+                    Text("Listening happens on this phone. With Hermes voice on, replies are synthesized by the server's TTS provider (Pocket TTS on prometheus) and the phone voice is used only if that fails. Talk over a reply to stop it; permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices. Fast model: while voice mode is on the session runs the named alias (from model_aliases on the server) at low reasoning effort, and switches back when voice mode ends.")
                 }
                 Section {
                     Button("Sign out", role: .destructive) {

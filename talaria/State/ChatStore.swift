@@ -76,6 +76,9 @@ final class ChatStore {
         return effort.isEmpty ? info.model : "\(info.model) · \(effort)"
     }
 
+    /// The open session's model and reasoning effort as the server last reported them.
+    var currentInfo: (model: String, effort: String)? { session.flatMap { liveInfo[$0.liveId] } }
+
     private func recordInfo(_ info: [String: Any]?, for liveId: String) {
         guard let info, let model = info["model"] as? String, !model.isEmpty else { return }
         liveInfo[liveId] = (model, info["reasoning_effort"] as? String ?? "")
@@ -174,18 +177,7 @@ final class ChatStore {
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
         error = nil
         do {
-            if session == nil {
-                let r = try await client.request("session.create", [:], timeout: 60)
-                guard let liveId = r["session_id"] as? String else { throw GatewayError.badFrame }
-                let stored = r["stored_session_id"] as? String ?? liveId
-                let created = HermesSession(id: stored, liveId: liveId)
-                transcripts[liveId] = transcripts[Self.draftKey] ?? []
-                transcripts[Self.draftKey] = []
-                recordInfo(r["info"] as? [String: Any], for: liveId)
-                session = created
-                UserDefaults.standard.set(stored, forKey: Self.lastSessionKey)
-                onSessionCreated?(created)
-            }
+            if session == nil { try await createSession(client) }
             guard let session else { return }
             let sid = session.liveId
 
@@ -239,6 +231,38 @@ final class ChatStore {
         } catch {
             self.error = error.localizedDescription
             if let sid = session?.liveId, transcripts[sid]?.last?.kind == .user { running.remove(sid) }
+        }
+    }
+
+    private func createSession(_ client: GatewayClient) async throws {
+        let r = try await client.request("session.create", [:], timeout: 60)
+        guard let liveId = r["session_id"] as? String else { throw GatewayError.badFrame }
+        let stored = r["stored_session_id"] as? String ?? liveId
+        let created = HermesSession(id: stored, liveId: liveId)
+        transcripts[liveId] = transcripts[Self.draftKey] ?? []
+        transcripts[Self.draftKey] = []
+        recordInfo(r["info"] as? [String: Any], for: liveId)
+        session = created
+        UserDefaults.standard.set(stored, forKey: Self.lastSessionKey)
+        onSessionCreated?(created)
+    }
+
+    /// Open a live session now if none exists, so per-session settings can be applied before the first prompt.
+    func ensureSession() async {
+        guard session == nil, let client, client.isConnected else { return }
+        do { try await createSession(client) } catch { self.error = error.localizedDescription }
+    }
+
+    /// Per-session runtime setting, the same as the TUI's `/model` and `/reasoning`.
+    @discardableResult
+    func setSessionConfig(_ key: String, _ value: String) async -> Bool {
+        guard let client, let sid = session?.liveId else { return false }
+        do {
+            _ = try await client.request("config.set", ["key": key, "value": value, "session_id": sid], timeout: 60)
+            return true
+        } catch {
+            transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Could not set \(key) to \(value): \(error.localizedDescription)"))
+            return false
         }
     }
 

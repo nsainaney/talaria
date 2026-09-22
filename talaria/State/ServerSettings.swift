@@ -10,6 +10,8 @@ final class ServerSettings {
     private static let passwordKey = "hermes.password"
     private static let voiceKey = "talaria.voiceEnabled"
     private static let serverVoiceKey = "talaria.serverVoice"
+    private static let fastVoiceKey = "talaria.voiceFastModel"
+    private static let voiceAliasKey = "talaria.voiceModelAlias"
 
     var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: Self.urlKey) } }
     var username: String { didSet { UserDefaults.standard.set(username, forKey: Self.userKey) } }
@@ -18,6 +20,9 @@ final class ServerSettings {
     var voiceEnabled: Bool { didSet { UserDefaults.standard.set(voiceEnabled, forKey: Self.voiceKey) } }
     /// Speak replies with the voice configured on the Hermes server (Pocket TTS) instead of the phone's.
     var serverVoice: Bool { didSet { UserDefaults.standard.set(serverVoice, forKey: Self.serverVoiceKey) } }
+    /// While voice mode is on, switch the session to a faster model alias with low reasoning effort.
+    var voiceFastModel: Bool { didSet { UserDefaults.standard.set(voiceFastModel, forKey: Self.fastVoiceKey) } }
+    var voiceModelAlias: String { didSet { UserDefaults.standard.set(voiceModelAlias, forKey: Self.voiceAliasKey) } }
 
     init() {
         serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? "http://127.0.0.1:9119"
@@ -25,6 +30,8 @@ final class ServerSettings {
         password = Keychain.get(Self.passwordKey) ?? ""
         voiceEnabled = UserDefaults.standard.object(forKey: Self.voiceKey) as? Bool ?? true
         serverVoice = UserDefaults.standard.object(forKey: Self.serverVoiceKey) as? Bool ?? true
+        voiceFastModel = UserDefaults.standard.object(forKey: Self.fastVoiceKey) as? Bool ?? true
+        voiceModelAlias = UserDefaults.standard.string(forKey: Self.voiceAliasKey) ?? "fast"
     }
 
     var isConfigured: Bool { url != nil && !username.isEmpty && !password.isEmpty }
