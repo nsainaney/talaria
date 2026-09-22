@@ -30,6 +30,8 @@ struct ChatRow: View {
                                 Label("Queued", systemImage: "clock").font(.caption2).foregroundStyle(.secondary)
                             } else if item.isVoice {
                                 Label("Voice", systemImage: "mic.fill").font(.caption2).foregroundStyle(.secondary)
+                            } else if item.isRemote {
+                                Label("From another client", systemImage: "desktopcomputer").font(.caption2).foregroundStyle(.secondary)
                             }
                             Text(verbatim: item.text).textSelection(.enabled)
                         }

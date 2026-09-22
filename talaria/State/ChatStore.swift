@@ -15,6 +15,8 @@ struct ChatItem: Identifiable {
     var isSteer = false
     var isQueued = false
     var isVoice = false
+    /// Typed on another client (web dashboard, TUI) while this session was open here.
+    var isRemote = false
     var toolId: String?
     var toolName: String?
     var toolResult: String?
@@ -44,6 +46,8 @@ final class ChatStore {
     private var statusLines: [String: String] = [:]
     /// Model and reasoning effort per live session, from `session.info`.
     private var liveInfo: [String: (model: String, effort: String)] = [:]
+    /// Sessions where this client just submitted a prompt, so the next message.start is ours.
+    private var expectingTurnStart: Set<String> = []
     var isLoadingHistory = false
     var pendingApproval: ApprovalRequest? { didSet { signal?(.requestsChanged) } }
     var pendingClarify: ClarifyRequest? { didSet { signal?(.requestsChanged) } }
@@ -141,6 +145,26 @@ final class ChatStore {
         }
     }
 
+    /// Fetch the prompt of a turn that another client started on the open session.
+    private func showRemotePrompt(liveId: String) async {
+        guard let client, let s = session, s.liveId == liveId,
+              let r = try? await client.request("session.resume", ["session_id": s.id], timeout: 60),
+              let inflight = r["inflight"] as? [String: Any],
+              let text = inflight["user"] as? String, !text.isEmpty else { return }
+        var items = transcripts[liveId] ?? []
+        if let last = items.last(where: { $0.kind == .user }), last.text == text { return }
+        var item = ChatItem(kind: .user, text: text)
+        item.isRemote = true
+        // Place it before anything already streamed for this turn.
+        if let i = items.lastIndex(where: { $0.kind == .user }) {
+            let insertAt = items[(i + 1)...].firstIndex(where: { $0.isStreaming }) ?? items.endIndex
+            items.insert(item, at: insertAt)
+        } else {
+            items.append(item)
+        }
+        transcripts[liveId] = items
+    }
+
     func forget(sessionLiveId: String) {
         transcripts[sessionLiveId] = nil
         running.remove(sessionLiveId)
@@ -222,6 +246,7 @@ final class ChatStore {
             }
 
             running.insert(sid)
+            expectingTurnStart.insert(sid)
             var params: [String: Any] = ["session_id": sid, "text": submitText]
             if let voice { params.merge(voice.params) { a, _ in a } }
             let r = try await client.request("prompt.submit", params, timeout: 60)
@@ -276,6 +301,7 @@ final class ChatStore {
             item.isQueued = true
             item.isVoice = voice != nil
             transcripts[sid, default: []].append(item)
+            expectingTurnStart.insert(sid)
             var params: [String: Any] = ["session_id": sid, "text": text, "queued": true]
             if let voice { params.merge(voice.params) { a, _ in a } }
             _ = try await client.request("prompt.submit", params, timeout: 60)
@@ -294,6 +320,7 @@ final class ChatStore {
             item.isSteer = true
             item.isVoice = voice != nil
             transcripts[sid, default: []].append(item)
+            expectingTurnStart.insert(sid)
             // session.redirect validates strictly and rejects the voice-live fields; the surface
             // set by the last prompt.submit still applies to the redirected turn.
             _ = try await client.request("session.redirect", ["session_id": sid, "text": text], timeout: 60)
@@ -363,6 +390,10 @@ final class ChatStore {
             running.insert(sid)
             statusLines[sid] = nil
             if let i = items.firstIndex(where: { $0.kind == .user && $0.isQueued }) { items[i].isQueued = false }
+            if expectingTurnStart.remove(sid) == nil, isOpen {
+                // Started by another client: pull its prompt so the transcript stays complete.
+                Task { await self.showRemotePrompt(liveId: sid) }
+            }
             if isOpen { signal?(.turnStarted) }
 
         case "message.delta":
