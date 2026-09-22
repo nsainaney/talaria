@@ -267,9 +267,9 @@ final class ChatStore {
             item.isSteer = true
             item.isVoice = voice != nil
             transcripts[sid, default: []].append(item)
-            var params: [String: Any] = ["session_id": sid, "text": text]
-            if let voice { params.merge(voice.params) { a, _ in a } }
-            _ = try await client.request("session.redirect", params, timeout: 60)
+            // session.redirect validates strictly and rejects the voice-live fields; the surface
+            // set by the last prompt.submit still applies to the redirected turn.
+            _ = try await client.request("session.redirect", ["session_id": sid, "text": text], timeout: 60)
         } catch {
             self.error = error.localizedDescription
         }
