@@ -180,11 +180,12 @@ final class VoiceController {
         }
     }
 
-    /// A short spoken cue when a turn runs long with nothing said yet.
+    /// A short spoken cue when a turn runs long with nothing said yet: once at 15 s, since
+    /// a normal turn produces its first words well before that.
     private func scheduleWorkingCue() {
         workingCueTask?.cancel()
         workingCueTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(8))
+            try? await Task.sleep(for: .seconds(15))
             guard !Task.isCancelled, let self, self.state == .thinking, !self.splitter.receivedAny else { return }
             self.say("Still working on it.")
         }
