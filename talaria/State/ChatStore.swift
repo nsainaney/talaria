@@ -305,15 +305,30 @@ final class ChatStore {
     /// Per-session runtime setting, the same as the TUI's `/model` and `/reasoning`.
     @discardableResult
     func setSessionConfig(_ key: String, _ value: String) async -> Bool {
-        guard let client, let sid = session?.liveId else { return false }
+        await setSessionConfigResult(key, value) != nil
+    }
+
+    /// Same, returning the server's reply (model switches report `confirm_required` / `warning`).
+    func setSessionConfigResult(_ key: String, _ value: String, confirmed: Bool = false) async -> [String: Any]? {
+        guard let client, let sid = session?.liveId else { return nil }
         do {
             // scope is explicit: without a resolvable session the server would write the global config.
-            _ = try await client.request("config.set", ["key": key, "value": value, "session_id": sid, "scope": "session"], timeout: 60)
-            return true
+            var params: [String: Any] = ["key": key, "value": value, "session_id": sid, "scope": "session"]
+            if confirmed { params["confirm_expensive_model"] = true }
+            return try await client.request("config.set", params, timeout: 60)
         } catch {
             transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Could not set \(key) to \(value): \(error.localizedDescription)"))
-            return false
+            return nil
         }
+    }
+
+    /// Providers and models available to the open session (creates the session if needed).
+    func modelOptions(refresh: Bool) async throws -> ModelOptions {
+        await ensureSession()
+        guard let client, let sid = session?.liveId else { throw GatewayError.notConnected }
+        let r = try await client.request("model.options", ["session_id": sid, "refresh": refresh], timeout: 60)
+        guard let o = ModelOptions(payload: r) else { throw GatewayError.badFrame }
+        return o
     }
 
     /// Queue a message to run after the current turn (FIFO, never a live correction).

@@ -12,6 +12,7 @@ struct ChatView: View {
     @State private var showFiles = false
     @State private var showCamera = false
     @State private var showMeeting = false
+    @State private var showModelPicker = false
     @FocusState private var composerFocused: Bool
 
     private var chat: ChatStore { model.chat }
@@ -58,6 +59,7 @@ struct ChatView: View {
             CameraPicker { attachments.append(.image($0)) }.ignoresSafeArea()
         }
         .sheet(isPresented: $showMeeting) { MeetingView() }
+        .sheet(isPresented: $showModelPicker) { ModelPickerView() }
         .onReceive(NotificationCenter.default.publisher(for: .invokeSkill)) { note in
             guard let name = note.object as? String else { return }
             draft = "/\(name) "
@@ -256,12 +258,16 @@ struct ChatView: View {
                     .disabled(!model.gateway.isConnected)
                     .accessibilityLabel("Talk to Hermes")
                 }
-                if let label = chat.modelLabel {
-                    Text(label).font(.subheadline)
-                        .padding(.horizontal, 12).frame(height: 36)
-                        .background(Color(.tertiarySystemFill), in: Capsule())
-                        .lineLimit(1)
+                Button { composerFocused = false; showModelPicker = true } label: {
+                    HStack(spacing: 4) {
+                        Text(chat.modelLabel ?? "Model").lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                    }
+                    .font(.subheadline).foregroundStyle(.primary)
+                    .padding(.horizontal, 12).frame(height: 36)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
                 }
+                .disabled(!model.gateway.isConnected)
                 Spacer()
                 primaryButton
             }
