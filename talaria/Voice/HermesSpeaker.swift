@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 
 /// Speaks reply chunks with the voice configured on the Hermes server (dashboard
-/// `POST /api/audio/speak`, Pocket TTS on prometheus). Chunks are fetched one at a time in order
+/// `POST /api/audio/speak`, whatever TTS provider Hermes has). Chunks are fetched one at a time in order
 /// and the next fetch overlaps playback of the current one. Audio plays through the recognizer's
 /// engine when one is attached, so the echo canceller has the right reference. If the server
 /// cannot synthesize, the rest of the session uses the on-device voice so nothing is lost.
