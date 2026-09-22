@@ -35,8 +35,16 @@ final class VoiceController {
     private let skills: SkillsStore
     private let settings: ServerSettings
 
-    /// Quiet gap after the transcript stops changing that ends an utterance.
-    private let endOfUtterance: Duration = .milliseconds(900)
+    /// Quiet gap after the transcript stops changing that ends an utterance. Longer while Hermes
+    /// is already working, since nothing is waiting on the words and mid-thought pauses are common.
+    private var endOfUtterance: Duration { chat.isRunning ? .seconds(2) : .milliseconds(1300) }
+    /// Extra wait granted, at most twice, when the sentence so far clearly is not finished.
+    private let unfinishedGrace: Duration = .seconds(1)
+    private static let trailingConnectives: Set<String> = [
+        "and", "or", "but", "so", "because", "then", "like", "example", "with", "to", "the", "a", "an",
+        "of", "in", "on", "at", "for", "is", "are", "was", "if", "that", "which", "i", "we", "you", "it",
+        "um", "uh", "er", "also", "plus", "minus", "not", "no", "very", "really", "just",
+    ]
 
     init(chat: ChatStore, skills: SkillsStore, settings: ServerSettings) {
         self.chat = chat
@@ -98,8 +106,14 @@ final class VoiceController {
             state = .listening
         }
         silenceTask?.cancel()
-        silenceTask = Task { [weak self, endOfUtterance] in
-            try? await Task.sleep(for: endOfUtterance)
+        let pause = endOfUtterance
+        silenceTask = Task { [weak self, unfinishedGrace] in
+            try? await Task.sleep(for: pause)
+            var extensions = 0
+            while !Task.isCancelled, let self, extensions < 2, Self.soundsUnfinished(self.transcript) {
+                extensions += 1
+                try? await Task.sleep(for: unfinishedGrace)
+            }
             guard !Task.isCancelled else { return }
             self?.utteranceEnded()
         }
@@ -308,6 +322,14 @@ final class VoiceController {
         answering = .none
         chat.respond(to: c, answer: answer)
         state = .thinking
+    }
+
+    /// A sentence that trails off on a connective or a comma is probably still being spoken.
+    private static func soundsUnfinished(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasSuffix(",") || t.hasSuffix("…") || t.hasSuffix("-") { return true }
+        guard let last = words(t).last else { return false }
+        return trailingConnectives.contains(last)
     }
 
     private static func isStopWord(_ s: String) -> Bool {
