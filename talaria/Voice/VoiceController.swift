@@ -16,7 +16,7 @@ final class VoiceController {
     var isActive: Bool { state != .idle }
 
     private let recognizer = SpeechRecognizer()
-    private let speaker = Speaker()
+    private let speaker = HermesSpeaker()
     private var splitter = SpeechSentenceSplitter()
     private var silenceTask: Task<Void, Never>?
     private var workingCueTask: Task<Void, Never>?
@@ -26,13 +26,16 @@ final class VoiceController {
     private var interruptedLastReply = false
     private unowned let chat: ChatStore
     private let skills: SkillsStore
+    private let settings: ServerSettings
 
     /// Quiet gap after the transcript stops changing that ends an utterance.
     private let endOfUtterance: Duration = .milliseconds(900)
 
-    init(chat: ChatStore, skills: SkillsStore) {
+    init(chat: ChatStore, skills: SkillsStore, settings: ServerSettings) {
         self.chat = chat
         self.skills = skills
+        self.settings = settings
+        speaker.auth = { [weak settings] in settings?.auth }
         recognizer.onText = { [weak self] in self?.heard($0) }
         recognizer.onError = { [weak self] in self?.error = $0.localizedDescription }
         speaker.onFinished = { [weak self] in self?.finishedSpeaking() }
@@ -47,6 +50,8 @@ final class VoiceController {
             return
         }
         do { try recognizer.start() } catch { self.error = error.localizedDescription; return }
+        speaker.useServer = settings.serverVoice
+        speaker.resetSession()
         transcript = ""
         muteReply = false
         state = chat.isRunning ? .thinking : .listening
@@ -171,6 +176,9 @@ final class VoiceController {
         state = .speaking
         speaker.speak(text)
     }
+
+    /// Why the server voice was not used this session, if it failed.
+    var serverVoiceError: String? { speaker.lastError }
 
     private func finishedSpeaking() {
         guard state == .speaking else { return }

@@ -85,6 +85,35 @@ struct GatewayAuth {
         return obj?["ticket"] as? String
     }
 
+    /// Synthesize text with the dashboard's configured TTS provider; returns the audio bytes
+    /// (WAV for Pocket TTS, MP3/OGG for others). Signs in again once if the session lapsed.
+    func speak(_ text: String) async throws -> Data {
+        if let d = try await postSpeak(text) { return d }
+        try await login()
+        guard let d = try await postSpeak(text) else { throw GatewayAuthError.badCredentials }
+        return d
+    }
+
+    private func postSpeak(_ text: String) async throws -> Data? {
+        var req = request("POST", "/api/audio/speak")
+        req.timeoutInterval = 90
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["text": text])
+        let (data, resp) = try await session.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { return nil }
+        guard (200..<300).contains(code) else {
+            let body = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["detail"] as? String
+            throw GatewayAuthError.http(code, body ?? String(data: data, encoding: .utf8) ?? "")
+        }
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let url = obj["data_url"] as? String, let comma = url.firstIndex(of: ","),
+              let audio = Data(base64Encoded: String(url[url.index(after: comma)...])) else {
+            throw GatewayAuthError.http(code, "unexpected speak response")
+        }
+        return audio
+    }
+
     /// Ends the dashboard session and drops its cookies. Caller clears the Keychain.
     func logout() async {
         var req = request("POST", "/auth/logout")

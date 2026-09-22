@@ -43,7 +43,8 @@ struct SettingsView: View {
                 Section {
                     Toggle("Voice mode", isOn: $settings.voiceEnabled)
                     if settings.voiceEnabled {
-                        Picker("Voice", selection: $voiceId) {
+                        Toggle("Hermes voice (server)", isOn: $settings.serverVoice)
+                        Picker(settings.serverVoice ? "Fallback voice" : "Voice", selection: $voiceId) {
                             Text("Automatic (best installed)").tag("")
                             ForEach(Speaker.availableVoices(), id: \.identifier) { v in
                                 Text("\(v.name) · \(qualityLabel(v.quality))").tag(v.identifier)
@@ -51,7 +52,7 @@ struct SettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("Listening and speaking happen on this phone. Talk over a reply to stop it; permission requests take a spoken allow, always or deny. The built-in voices are flat: download a Premium or Enhanced voice in iOS Settings › Accessibility › Spoken Content › Voices and it is used automatically.")
+                    Text("Listening happens on this phone. With Hermes voice on, replies are synthesized by the server's TTS provider (Pocket TTS on prometheus) and the phone voice is used only if that fails. Talk over a reply to stop it; permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices.")
                 }
                 Section {
                     Button("Sign out", role: .destructive) {

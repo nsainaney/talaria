@@ -54,6 +54,13 @@ Everything runs on the phone; nothing new is needed on the server.
   `~/.hermes/skills/productivity/meeting-digest/` on the Hermes host (on prometheus that home is
   `/mnt/space/services/hermes/state`) and reload skills. It uses the `memory` and
   `cronjob_manage` tools and asks before creating reminders.
+- **Server voice (Pocket TTS).** With *Hermes voice* on in Settings, each spoken sentence is
+  fetched from the dashboard's `POST /api/audio/speak`, which runs the profile's TTS provider.
+  On prometheus that is Kyutai Pocket TTS via the command provider: bundle, model and `say`
+  wrapper in `/mnt/space/services/hermes/pocket-tts/`, provider block in nix-config
+  `services/hermes.nix` (`tts.provider = pocket`, voice `alba`). About 1.7 s to the first
+  sentence (model load per call); later sentences fetch while the current one plays. If the
+  server cannot synthesize, the phone voice takes over for the rest of the reply.
 - **Turning it off.** Settings → *Voice mode* hides the microphone and the meeting entry. To
   drop the feature entirely, delete the branch: `git checkout main && git branch -D voice`.
 

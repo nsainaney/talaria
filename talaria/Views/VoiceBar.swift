@@ -25,6 +25,8 @@ struct VoiceBar: View {
             }
             if let e = voice.error {
                 Text(e).font(.caption).foregroundStyle(.red)
+            } else if let e = voice.serverVoiceError {
+                Text("Server voice unavailable, using phone voice: \(e)").font(.caption).foregroundStyle(.orange).lineLimit(2)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)

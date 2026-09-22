@@ -17,7 +17,7 @@ final class AppModel {
 
     init() {
         skills = SkillsStore(pins: pins)
-        voice = VoiceController(chat: chat, skills: skills)
+        voice = VoiceController(chat: chat, skills: skills, settings: settings)
         chat.client = gateway
         gateway.onEvent = { [weak self] e in self?.handle(event: e) }
         gateway.onServerRequest = { [weak self] r in self?.chat.handle(serverRequest: r) ?? false }
