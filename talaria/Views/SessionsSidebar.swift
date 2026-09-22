@@ -15,7 +15,7 @@ struct SessionsSidebar: View {
             $0.displayTitle.lowercased().contains(q) || ($0.preview ?? "").lowercased().contains(q)
         }
         // Pinned first, then by recency as the server returned them.
-        return rows.filter { $0.pinned == true } + rows.filter { $0.pinned != true }
+        return rows.filter { model.pins.isSessionPinned($0.id) } + rows.filter { !model.pins.isSessionPinned($0.id) }
     }
 
     var body: some View {
@@ -42,14 +42,6 @@ struct SessionsSidebar: View {
                 ForEach(visible) { s in
                     row(s)
                 }
-                if model.hasMoreSessions && query.isEmpty {
-                    Button {
-                        Task { await model.loadMoreSessions() }
-                    } label: {
-                        HStack { Spacer(); if model.isLoadingSessions { ProgressView() } else { Text("Load more") }; Spacer() }
-                    }
-                    .foregroundStyle(.secondary)
-                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -70,11 +62,11 @@ struct SessionsSidebar: View {
         Button { onSelect(s) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    if s.pinned == true { Image(systemName: "pin.fill").font(.caption2) }
+                    if model.pins.isSessionPinned(s.id) { Image(systemName: "pin.fill").font(.caption2) }
                     Text(s.displayTitle).lineLimit(1)
                 }
                 .foregroundStyle(.primary)
-                if let d = s.lastActiveDate {
+                if let d = s.startedDate {
                     Text(d, style: .relative).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -82,8 +74,8 @@ struct SessionsSidebar: View {
         .listRowBackground(model.chat.session?.id == s.id ? Color.accentColor.opacity(0.15) : Color.clear)
         .contextMenu {
             Button { beginRename(s) } label: { Label("Rename", systemImage: "pencil") }
-            Button { Task { await model.togglePin(s) } } label: {
-                Label(s.pinned == true ? "Unpin" : "Pin", systemImage: s.pinned == true ? "pin.slash" : "pin")
+            Button { model.pins.toggleSession(s.id) } label: {
+                Label(model.pins.isSessionPinned(s.id) ? "Unpin" : "Pin", systemImage: model.pins.isSessionPinned(s.id) ? "pin.slash" : "pin")
             }
             Button(role: .destructive) { Task { await model.delete(s) } } label: { Label("Delete", systemImage: "trash") }
         }
@@ -92,8 +84,8 @@ struct SessionsSidebar: View {
             Button { beginRename(s) } label: { Label("Rename", systemImage: "pencil") }.tint(.blue)
         }
         .swipeActions(edge: .leading) {
-            Button { Task { await model.togglePin(s) } } label: {
-                Label(s.pinned == true ? "Unpin" : "Pin", systemImage: s.pinned == true ? "pin.slash" : "pin")
+            Button { model.pins.toggleSession(s.id) } label: {
+                Label(model.pins.isSessionPinned(s.id) ? "Unpin" : "Pin", systemImage: model.pins.isSessionPinned(s.id) ? "pin.slash" : "pin")
             }
             .tint(.orange)
         }

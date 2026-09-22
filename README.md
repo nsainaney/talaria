@@ -4,42 +4,70 @@ iOS chat client for a [hermes-agent](https://github.com/nousresearch/hermes-agen
 
 ## Server setup
 
-In `~/.hermes/.env`:
+Talaria speaks the `tui_gateway` JSON-RPC protocol over the dashboard's WebSocket, the same backend the Hermes TUI and Desktop app use. Run `hermes dashboard` bound to a reachable address with a username/password provider:
 
 ```
-API_SERVER_ENABLED=true
-API_SERVER_KEY=<your key>
-API_SERVER_HOST=0.0.0.0   # if the phone is on the LAN rather than the same machine
+HERMES_DASHBOARD_BASIC_AUTH_USERNAME=you
+HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=...
+HERMES_DASHBOARD_BASIC_AUTH_SECRET=<openssl rand -base64 32>
 ```
 
-Then `hermes gateway`. In the app, open Settings (gear) and enter the base URL (default `http://127.0.0.1:8642`) and the key.
+In the app, open Settings (gear), enter the dashboard URL (e.g. `http://prometheus:9119`), username and password, and Sign in. The password is stored in the Keychain; the dashboard session cookies renew themselves and the app re-signs in silently if they lapse. Sign out clears both. Requires Hermes 0.21 or newer.
 
-## Hermes endpoints used
+## Protocol
 
-| Purpose | Endpoint |
+| Purpose | Call |
 |---|---|
-| List / create / delete sessions | `GET|POST /api/sessions`, `DELETE /api/sessions/{id}` |
-| Session history | `GET /api/sessions/{id}/messages?order=oldest` |
-| Send a turn | `POST /v1/runs` `{input, session_id, conversation_history}` |
-| Stream the turn | `GET /v1/runs/{id}/events` (SSE; `message.delta`, `reasoning.available`, `tool.started`, `tool.completed`, `approval.request`, `run.completed` …) |
-| Poll a run after reconnect | `GET /v1/runs/{id}` |
-| Steer a running turn | `POST /v1/runs/{id}/steer` `{input}` |
-| Stop | `POST /v1/runs/{id}/stop` |
-| Rename / pin a session | `PATCH /api/sessions/{id}` `{title}` or `{pinned}` |
-| Answer a permission prompt | `POST /v1/runs/{id}/approval` `{choice, request_id?}` |
-| Skills | `GET /v1/skills` |
-| Connection test | `GET /health` |
+| Sign in / WebSocket ticket | `POST /auth/password-login`, `POST /api/auth/ws-ticket`, then `ws://host/api/ws?ticket=…` |
+| Sessions | `session.list`, `session.resume`, `session.create`, `session.title`, `session.close` + `session.delete` |
+| Turns | `prompt.submit`, `session.steer`, `session.interrupt` |
+| Attachments | `image.attach_bytes`, `file.attach` |
+| Skills | `skills.manage list` + `complete.slash` for descriptions; `/name args` runs through `command.dispatch` |
+| Streaming | events `message.start/delta/complete`, `reasoning.delta/available`, `tool.start/complete`, `status.update`, `session.title`, `sessions.changed` |
+| Prompts from the agent | server requests `approval` and `clarify`, answered in place |
+| Reconnect | per-session `seq` watermarks and `session.events.since` replay; `session.resume` re-attaches to a live turn |
 
-The app sends its own transcript as `conversation_history` on every run. The Hermes build on the server (0.19.0) does not load a session's history for `/v1/runs` by itself, although newer builds do; supplying it explicitly works on both and the turn is still written to the session.
-
-Images are sent as `data:image/jpeg;base64,…` parts inside an OpenAI-style user message in the run `input`. Hermes drops a run's event queue once the client disconnects, so after backgrounding the app polls the run status and then reloads the session transcript.
-
-Skill invocation: the API server does not expand `/skill` slash commands (only the CLI and messaging gateways do), so `/name …` in the composer is sent as an explicit instruction asking the agent to load that skill.
+Pinned sessions and skills are stored locally in UserDefaults, not on the server (iCloud sync needs a paid team).
 
 ## Layout
 
-- `talaria/Networking` – `HermesClient` (REST + SSE), `SSEParser`, `Keychain`
-- `talaria/State` – `AppModel`, `ChatStore` (event stream → transcript rows), `SkillsStore` (search + pins), `ServerSettings`
-- `talaria/Views` – `RootView` (sessions drawer, toolbar), `ChatView` (transcript, composer, `/` popup), `ChatRow`, `SkillsView`, `SettingsView`, `ApprovalView`
+- `talaria/Networking` – `GatewayAuth` (dashboard login, tickets), `GatewayClient` (JSON-RPC over WebSocket, replay), `Keychain`, `ImageEncoding`
+- `talaria/State` – `AppModel`, `ChatStore` (events → transcript rows), `SkillsStore`, `PinStore`, `ServerSettings`
+- `talaria/Views` – `RootView`, `ChatView`, `ChatRow`, `SessionsSidebar`, `SkillsView`, `SettingsView`, `ApprovalView` (+ `ClarifyView`)
 
-`Info.plist` (project root) allows plain-HTTP loads so LAN gateways work; deployment target is iOS 26.5.
+`Info.plist` allows plain-HTTP loads so LAN dashboards work; deployment target is iOS 26.5.
+
+## Voice (branch `voice`)
+
+Everything runs on the phone; nothing new is needed on the server.
+
+- **Talk to Hermes.** Tap the microphone in the composer. Speech is recognised on the phone and
+  sent as text after a short pause; replies are spoken sentence by sentence as they stream, with
+  code blocks and markdown stripped. Talk over a reply and it goes quiet and listens; anything said while Hermes is working is
+  steered into the running turn (queued if the turn is too far along); say "stop" to interrupt. Permission and clarify requests are read aloud and take a spoken *allow*,
+  *always* or *deny* (the on-screen popup still works).
+- **Record a meeting.** Composer `+` menu → *Record meeting*. Audio is saved to
+  Files › Talaria › Meetings and transcribed live on the phone in timestamped segments,
+  including with the screen locked. *Send to Hermes* attaches the transcript with an
+  instruction. If a `meeting-digest` skill exists on the server the app invokes it instead.
+- **Server skill.** Copy `hermes/skills/meeting-digest/` to
+  `~/.hermes/skills/productivity/meeting-digest/` on the Hermes host (on prometheus that home is
+  `/mnt/space/services/hermes/state`) and reload skills. It uses the `memory` and
+  `cronjob_manage` tools and asks before creating reminders.
+- **Server voice (Pocket TTS).** With *Hermes voice* on in Settings, each spoken sentence is
+  fetched from the dashboard's `POST /api/audio/speak`, which runs the profile's TTS provider.
+  On prometheus that is Kyutai's reference Pocket TTS served warm by the nix-managed
+  `podman-pocket-tts` container on 127.0.0.1:8131, declared in nix-config
+  `services/hermes/pocket-tts.nix` together with the `say-http` wrapper Hermes calls and the
+  `tts` provider block (voice `vera`). A warm sentence takes 0.3 to 1 s. Change the voice by
+  editing `voice` there and deploying. `hermes/pocket-tts/` in this repo keeps the Dockerfile
+  and wrapper source for reference. If the
+  server cannot synthesize, the phone voice takes over for the rest of the reply.
+  (The `pocket-tts.cpp` bundle from the benchmark is still there as `say`, but its
+  end-of-speech detection babbles on short text, so it is no longer used.)
+- **Turning it off.** Settings → *Voice mode* hides the microphone and the meeting entry. To
+  drop the feature entirely, delete the branch: `git checkout main && git branch -D voice`.
+
+Known limits: no speaker labels, English-first, and replies from Hermes take one to two seconds
+plus whatever its tools take. The voice engine is `SFSpeechRecognizer`; iOS 26's
+`SpeechAnalyzer` would be the upgrade for long meetings.

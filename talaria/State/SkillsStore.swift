@@ -1,38 +1,63 @@
 import Foundation
 import Observation
 
+/// A built-in slash command (`/model`, `/reasoning`, `/help`, …) from the server's completion list.
+struct SlashCommand: Identifiable, Hashable {
+    let name: String
+    var description: String?
+    var id: String { name }
+}
+
 @Observable @MainActor
 final class SkillsStore {
-    private static let pinnedKey = "hermes.pinnedSkills"
-
     var skills: [Skill] = []
-    var pinned: [String] {
-        didSet { UserDefaults.standard.set(pinned, forKey: Self.pinnedKey) }
-    }
+    var commands: [SlashCommand] = []
     var isLoading = false
     var error: String?
 
-    init() {
-        pinned = UserDefaults.standard.stringArray(forKey: Self.pinnedKey) ?? []
-    }
+    let pins: PinStore
 
-    func load(client: HermesClient?) async {
-        guard let client else { return }
+    init(pins: PinStore) { self.pins = pins }
+
+    /// Names and categories come from `skills.manage list`; descriptions from the slash
+    /// completion list, which is what the TUI's `/` popup shows.
+    func load(client: GatewayClient) async {
+        guard client.isConnected else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            skills = try await client.skills()
+            var byName: [String: Skill] = [:]
+            let listed = try await client.request("skills.manage", ["action": "list"])
+            for (category, names) in listed["skills"] as? [String: [String]] ?? [:] {
+                for n in names { byName[n] = Skill(name: n, description: nil, category: category) }
+            }
+            var builtins: [SlashCommand] = []
+            if let completions = try? await client.request("complete.slash", ["text": "/"]) {
+                for item in completions["items"] as? [[String: Any]] ?? [] {
+                    let kind = item["kind"] as? String ?? ""
+                    let raw = (item["text"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+                    let name = raw.hasPrefix("/") ? String(raw.dropFirst()) : raw
+                    guard !name.isEmpty else { continue }
+                    if kind == "command" {
+                        if !builtins.contains(where: { $0.name == name }) { builtins.append(SlashCommand(name: name, description: item["meta"] as? String)) }
+                        continue
+                    }
+                    guard kind == "skill" || kind == "bundle" else { continue }
+                    var s = byName[name] ?? Skill(name: name, description: nil, category: kind == "bundle" ? "bundle" : nil)
+                    s.description = item["meta"] as? String
+                    byName[name] = s
+                }
+            }
+            skills = byName.values.sorted { ($0.category ?? "", $0.name) < ($1.category ?? "", $1.name) }
+            commands = builtins
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
     }
 
-    func isPinned(_ skill: Skill) -> Bool { pinned.contains(skill.name) }
-
-    func togglePin(_ skill: Skill) {
-        if let i = pinned.firstIndex(of: skill.name) { pinned.remove(at: i) } else { pinned.append(skill.name) }
-    }
+    func isPinned(_ skill: Skill) -> Bool { pins.isSkillPinned(skill.name) }
+    func togglePin(_ skill: Skill) { pins.toggleSkill(skill.name) }
 
     /// Pinned first, then the rest, filtered by a case-insensitive substring on name/description/category.
     func filtered(_ query: String) -> [Skill] {
@@ -42,22 +67,31 @@ final class SkillsStore {
                 || (s.description ?? "").lowercased().contains(q)
                 || (s.category ?? "").lowercased().contains(q)
         }
-        let pinnedSet = Set(pinned)
-        let top = matches.filter { pinnedSet.contains($0.name) }
-        let rest = matches.filter { !pinnedSet.contains($0.name) }
-        return top + rest
+        return matches.filter { isPinned($0) } + matches.filter { !isPinned($0) }
+    }
+
+    /// Built-in commands whose name starts with the query (server order, which is by usage).
+    func commands(matching query: String) -> [SlashCommand] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return commands.filter { q.isEmpty || $0.name.lowercased().hasPrefix(q) }
+    }
+
+    /// The bare `/` listing is capped to the most-used commands, so ask the server again as the
+    /// person types; merges any new commands into `commands`.
+    func completeCommands(prefix: String, client: GatewayClient) async {
+        guard client.isConnected, !prefix.isEmpty,
+              let r = try? await client.request("complete.slash", ["text": "/" + prefix], timeout: 15) else { return }
+        var merged = commands
+        for item in r["items"] as? [[String: Any]] ?? [] where item["kind"] as? String == "command" {
+            let raw = (item["text"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let name = raw.hasPrefix("/") ? String(raw.dropFirst()) : raw
+            guard !name.isEmpty, !merged.contains(where: { $0.name == name }) else { continue }
+            merged.append(SlashCommand(name: name, description: item["meta"] as? String))
+        }
+        if merged.count != commands.count { commands = merged }
     }
 
     func skill(named name: String) -> Skill? {
         skills.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-    }
-
-    /// The API server does not expand `/skill` slash commands the way the CLI and messaging
-    /// gateways do, so an invocation is sent as an explicit instruction to load the skill.
-    static func invocationText(skill: Skill, instruction: String) -> String {
-        var text = "[The user has invoked the \"\(skill.name)\" skill. Load it with your skills tool and follow its instructions.]"
-        let rest = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !rest.isEmpty { text += "\n\n" + rest }
-        return text
     }
 }

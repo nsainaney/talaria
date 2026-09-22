@@ -2,7 +2,6 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showSidebar = false
     @State private var showSkills = false
     @State private var showSettings = false
@@ -24,31 +23,47 @@ struct RootView: View {
                         Button { showSettings = true } label: { Image(systemName: "gearshape") }
                     }
                 }
+                .safeAreaInset(edge: .top) { connectionBanner }
         }
         .overlay { sidebarOverlay }
         .sheet(isPresented: $showSkills) { SkillsView() }
-        .sheet(isPresented: $showSettings, onDismiss: { Task { await model.reconnect() } }) { SettingsView() }
+        .sheet(isPresented: $showSettings, onDismiss: { Task { await model.connect() } }) { SettingsView() }
         .sheet(item: approvalBinding) { approval in
             ApprovalView(request: approval)
                 .interactiveDismissDisabled()
                 .presentationDetents([.medium, .large])
         }
-        .task {
-            if model.settings.isConfigured {
-                await model.reconnect()
-                await model.chat.resumeIfNeeded()
-            } else {
-                showSettings = true
-            }
+        .sheet(item: clarifyBinding) { clarify in
+            ClarifyView(request: clarify)
+                .interactiveDismissDisabled()
+                .presentationDetents([.medium, .large])
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await model.chat.resumeIfNeeded() } }
+        .task {
+            if model.settings.isConfigured { await model.connect() } else { showSettings = true }
         }
     }
 
-    /// Approval prompts are modal: the run is parked until the person answers.
+    /// A one-line banner while the socket is down; hidden once connected.
+    @ViewBuilder private var connectionBanner: some View {
+        switch model.gateway.state {
+        case .connected, .disconnected: EmptyView()
+        case .connecting: banner("Connecting…", .secondary)
+        case .reconnecting(let n): banner("Reconnecting (\(n))…", .orange)
+        case .failed(let why): banner(why, .red)
+        }
+    }
+
+    private func banner(_ text: String, _ color: Color) -> some View {
+        Text(text).font(.footnote).foregroundStyle(color)
+            .frame(maxWidth: .infinity).padding(.vertical, 4).background(.bar)
+    }
+
     private var approvalBinding: Binding<ApprovalRequest?> {
         Binding(get: { model.chat.pendingApproval }, set: { if $0 == nil { model.chat.pendingApproval = nil } })
+    }
+
+    private var clarifyBinding: Binding<ClarifyRequest?> {
+        Binding(get: { model.chat.pendingClarify }, set: { if $0 == nil { model.chat.pendingClarify = nil } })
     }
 
     @ViewBuilder private var sidebarOverlay: some View {

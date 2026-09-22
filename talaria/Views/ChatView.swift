@@ -11,6 +11,8 @@ struct ChatView: View {
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
+    @State private var showMeeting = false
+    @State private var showModelPicker = false
     @FocusState private var composerFocused: Bool
 
     private var chat: ChatStore { model.chat }
@@ -23,10 +25,15 @@ struct ChatView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 4)
             }
             if draft.hasPrefix("/") { slashPopup }
-            if !attachments.isEmpty { attachmentStrip }
+            if model.voice.isActive { VoiceBar().padding(.bottom, 6) }
             composer
         }
         .onChange(of: model.chat.session?.id) { _, _ in draft = ""; attachments = [] }
+        .task(id: slashQuery) {
+            guard let q = slashQuery else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            await model.skills.completeCommands(prefix: q, client: model.gateway)
+        }
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task {
@@ -51,6 +58,8 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { attachments.append(.image($0)) }.ignoresSafeArea()
         }
+        .sheet(isPresented: $showMeeting) { MeetingView() }
+        .sheet(isPresented: $showModelPicker) { ModelPickerView() }
         .onReceive(NotificationCenter.default.publisher(for: .invokeSkill)) { note in
             guard let name = note.object as? String else { return }
             draft = "/\(name) "
@@ -69,15 +78,17 @@ struct ChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if chat.items.isEmpty && !chat.isLoadingHistory {
-                        Text(model.settings.isConfigured ? "Ask Hermes anything. Type / to pick a skill." : "Set your Hermes server in Settings.")
+                        Text(model.settings.isConfigured ? "Ask Hermes anything. Type / to pick a skill." : "Sign in to your Hermes dashboard in Settings.")
                             .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 80)
                     }
                     ForEach(chat.items) { item in
                         ChatRow(item: item).id(item.id)
                     }
                     if chat.isRunning && !(chat.items.last?.isStreaming ?? false) {
-                        HStack(spacing: 6) { ProgressView(); Text("Working…").font(.caption).foregroundStyle(.secondary) }
+                        HStack(spacing: 6) { ProgressView(); Text(chat.statusText ?? "Working…").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                             .padding(.horizontal)
+                    } else if chat.isRunning, let status = chat.statusText {
+                        Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -128,13 +139,34 @@ struct ChatView: View {
         }
     }
 
+    /// The command name being typed after `/`, or nil when the draft is not a slash command.
+    private var slashQuery: String? {
+        guard draft.hasPrefix("/"), !draft.contains(" ") else { return nil }
+        return String(draft.dropFirst())
+    }
+
     private var slashPopup: some View {
         let query = String(draft.dropFirst()).components(separatedBy: " ").first ?? ""
         let matches = Array(model.skills.filtered(query).prefix(8))
+        let commands = Array(model.skills.commands(matching: query).prefix(6))
         return Group {
-            if !matches.isEmpty {
+            if !matches.isEmpty || !commands.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        ForEach(commands) { cmd in
+                            Button { draft = "/\(cmd.name) " } label: {
+                                HStack {
+                                    Image(systemName: "terminal").font(.caption2).foregroundStyle(.secondary)
+                                    Text(cmd.name).font(.body.monospaced())
+                                    Text(cmd.description ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Spacer()
+                                }
+                                .padding(.horizontal).padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Divider()
+                        }
                         ForEach(matches) { skill in
                             Button { draft = "/\(skill.name) " } label: {
                                 HStack {
@@ -172,66 +204,123 @@ struct ChatView: View {
                             }
                             .padding(4)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color(.secondarySystemBackground))
+                            .background(Color(.tertiarySystemFill))
                         }
                     }
-                        .frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(alignment: .topTrailing) {
-                            Button { attachments.remove(at: i) } label: {
-                                Image(systemName: "xmark.circle.fill").font(.body)
-                                    .foregroundStyle(.white, .black.opacity(0.6))
-                            }
-                            .padding(2)
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(alignment: .topTrailing) {
+                        Button { attachments.remove(at: i) } label: {
+                            Image(systemName: "xmark.circle.fill").font(.body)
+                                .foregroundStyle(.white, .black.opacity(0.6))
                         }
+                        .padding(2)
+                    }
                 }
             }
-            .padding(.horizontal).padding(.vertical, 6)
         }
-        .background(.bar)
     }
 
+    private var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty }
+
+    /// Card-style composer: text on top, controls row below (attach, model pill, send/stop).
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            Menu {
-                Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
-                if CameraPicker.isAvailable {
-                    Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
-                }
-                Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
-            } label: {
-                Image(systemName: "plus.circle").font(.title2)
-            }
-            .disabled(chat.isRunning || !model.settings.isConfigured)
-            TextField(chat.isRunning ? "Steer the running turn…" : "Message Hermes", text: $draft, axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.roundedBorder)
+        VStack(alignment: .leading, spacing: 10) {
+            if !attachments.isEmpty { attachmentStrip }
+            TextField(chat.isRunning ? "Queue a message…" : "Message Hermes", text: $draft, axis: .vertical)
+                .lineLimit(1...8)
+                .font(.title3)
                 .focused($composerFocused)
                 .autocorrectionDisabled(draft.hasPrefix("/"))
-            if chat.isRunning {
-                Button { Task { await steerDraft() } } label: {
-                    Image(systemName: "arrow.turn.down.right.circle.fill").font(.title2)
+            HStack(spacing: 10) {
+                Menu {
+                    Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+                    if CameraPicker.isAvailable {
+                        Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
+                    }
+                    Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
+                    if model.settings.voiceEnabled {
+                        Divider()
+                        Button { showMeeting = true } label: { Label("Record meeting", systemImage: "record.circle") }
+                    }
+                } label: {
+                    Image(systemName: "plus").font(.body.weight(.medium))
+                        .frame(width: 36, height: 36)
+                        .background(Color(.tertiarySystemFill), in: Circle())
                 }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button { Task { await chat.stop() } } label: {
-                    Image(systemName: "stop.circle.fill").font(.title2)
+                .disabled(chat.isRunning || !model.gateway.isConnected)
+                if model.settings.voiceEnabled && !model.voice.isActive {
+                    Button { composerFocused = false; Task { await model.voice.start() } } label: {
+                        Image(systemName: "mic").font(.body.weight(.medium))
+                            .frame(width: 36, height: 36)
+                            .background(Color(.tertiarySystemFill), in: Circle())
+                    }
+                    .disabled(!model.gateway.isConnected)
+                    .accessibilityLabel("Talk to Hermes")
                 }
-                .tint(.red)
-            } else {
-                Button { Task { await sendDraft() } } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                Button { composerFocused = false; showModelPicker = true } label: {
+                    HStack(spacing: 4) {
+                        Text(chat.modelLabel ?? "Model").lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                    }
+                    .font(.subheadline).foregroundStyle(.primary)
+                    .padding(.horizontal, 12).frame(height: 36)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
                 }
-                .disabled((draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || !model.settings.isConfigured)
+                .disabled(!model.gateway.isConnected)
+                Spacer()
+                primaryButton
             }
         }
-        .padding(.horizontal).padding(.vertical, 8)
-        .background(.bar)
+        .padding(14)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color(.separator).opacity(0.5)))
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 2)
+        .padding(.horizontal, 10).padding(.bottom, 6)
+        .background(.clear)
     }
 
-    private func steerDraft() async {
+    /// Stop while a turn runs and nothing is typed; otherwise send (queued during a run).
+    @ViewBuilder private var primaryButton: some View {
+        if chat.isRunning && !hasDraft {
+            Button { Task { await chat.stop() } } label: {
+                Image(systemName: "stop.fill").font(.body.weight(.bold)).foregroundStyle(.white)
+                    .frame(width: 40, height: 40).background(Color.red, in: Circle())
+            }
+        } else if chat.isRunning {
+            Button { Task { await submitWhileRunning(.queue) } } label: { sendGlyph(enabled: true) }
+                .contextMenu {
+                    Button { Task { await submitWhileRunning(.queue) } } label: { Label("Queue after this turn", systemImage: "text.append") }
+                    Button { Task { await submitWhileRunning(.steer) } } label: { Label("Steer the running turn", systemImage: "arrow.turn.down.right") }
+                    Button { Task { await submitWhileRunning(.redirect) } } label: { Label("Redirect the running turn", systemImage: "arrow.uturn.forward") }
+                    Divider()
+                    Button(role: .destructive) { Task { await chat.stop() } } label: { Label("Stop", systemImage: "stop.circle") }
+                }
+        } else {
+            let enabled = hasDraft && model.gateway.isConnected
+            Button { Task { await sendDraft() } } label: { sendGlyph(enabled: enabled) }
+                .disabled(!enabled)
+        }
+    }
+
+    private func sendGlyph(enabled: Bool) -> some View {
+        Image(systemName: "arrow.up").font(.body.weight(.bold))
+            .foregroundStyle(enabled ? Color.white : Color.secondary)
+            .frame(width: 40, height: 40)
+            .background(enabled ? Color.accentColor : Color(.tertiarySystemFill), in: Circle())
+            .animation(.easeInOut(duration: 0.15), value: enabled)
+    }
+
+    private enum RunningSubmit { case queue, steer, redirect }
+
+    private func submitWhileRunning(_ mode: RunningSubmit) async {
         let text = draft
         draft = ""
-        await chat.steer(text)
+        switch mode {
+        case .queue: await chat.enqueue(text)
+        case .steer: _ = await chat.steer(text)
+        case .redirect: await chat.redirect(text)
+        }
     }
 
     private func sendDraft() async {
@@ -247,17 +336,7 @@ struct ChatView: View {
             case .text(let name, let body): files.append((name, body))
             }
         }
-        await chat.send(Self.expandSlash(text, skills: model.skills), images: images, files: files)
-    }
-
-    /// `/skill-name rest of message` becomes an explicit skill invocation.
-    static func expandSlash(_ text: String, skills: SkillsStore) -> String {
-        guard text.hasPrefix("/") else { return text }
-        let body = text.dropFirst()
-        let name = String(body.prefix { !$0.isWhitespace })
-        guard let skill = skills.skill(named: name) else { return text }
-        let rest = String(body.dropFirst(name.count))
-        return SkillsStore.invocationText(skill: skill, instruction: rest)
+        await chat.send(text, images: images, files: files, skills: model.skills)
     }
 }
 
