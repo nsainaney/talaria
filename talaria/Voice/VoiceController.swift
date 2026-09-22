@@ -22,6 +22,8 @@ final class VoiceController {
     private var workingCueTask: Task<Void, Never>?
     /// Set after a barge-in so the rest of the interrupted reply stays silent.
     private var muteReply = false
+    /// Whether the person cut the last reply off; told to Hermes on the next turn.
+    private var interruptedLastReply = false
     private unowned let chat: ChatStore
     private let skills: SkillsStore
 
@@ -73,6 +75,7 @@ final class VoiceController {
             speaker.stop()
             splitter = SpeechSentenceSplitter()
             muteReply = true
+            interruptedLastReply = true
             state = .listening
         }
         silenceTask?.cancel()
@@ -93,6 +96,7 @@ final class VoiceController {
             speaker.stop()
             splitter = SpeechSentenceSplitter()
             muteReply = true
+            interruptedLastReply = true
             finishedSpeaking()
             if Self.isStopWord(text) { return }
         }
@@ -118,10 +122,12 @@ final class VoiceController {
         splitter = SpeechSentenceSplitter()
         state = .thinking
         scheduleWorkingCue()
+        let turn = ChatStore.VoiceTurn(context: chat.recentExchange(), interrupted: interruptedLastReply)
+        interruptedLastReply = false
         if chat.isRunning {
-            await chat.redirect(text, viaVoice: true)
+            await chat.redirect(text, voice: turn)
         } else {
-            await chat.send(text, skills: skills, viaVoice: true)
+            await chat.send(text, skills: skills, voice: turn)
         }
         if chat.error != nil, state == .thinking { state = .listening }
     }

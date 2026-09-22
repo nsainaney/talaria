@@ -1,10 +1,12 @@
 import SwiftUI
+import AVFoundation
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var status: String?
     @State private var busy = false
+    @AppStorage(Speaker.voiceKey) private var voiceId = ""
 
     var body: some View {
         @Bindable var settings = model.settings
@@ -40,8 +42,16 @@ struct SettingsView: View {
                 }
                 Section {
                     Toggle("Voice mode", isOn: $settings.voiceEnabled)
+                    if settings.voiceEnabled {
+                        Picker("Voice", selection: $voiceId) {
+                            Text("Automatic (best installed)").tag("")
+                            ForEach(Speaker.availableVoices(), id: \.identifier) { v in
+                                Text("\(v.name) · \(qualityLabel(v.quality))").tag(v.identifier)
+                            }
+                        }
+                    }
                 } footer: {
-                    Text("Listening and speaking happen on this phone. Tap the microphone in the composer to talk to Hermes; talk over a reply to stop it. Permission requests are read aloud and take a spoken allow, always or deny.")
+                    Text("Listening and speaking happen on this phone. Talk over a reply to stop it; permission requests take a spoken allow, always or deny. The built-in voices are flat: download a Premium or Enhanced voice in iOS Settings › Accessibility › Spoken Content › Voices and it is used automatically.")
                 }
                 Section {
                     Button("Sign out", role: .destructive) {
@@ -53,6 +63,14 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func qualityLabel(_ q: AVSpeechSynthesisVoiceQuality) -> String {
+        switch q {
+        case .premium: return "Premium"
+        case .enhanced: return "Enhanced"
+        default: return "Default"
         }
     }
 

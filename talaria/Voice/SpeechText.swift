@@ -6,6 +6,7 @@ enum SpeechText {
     static func spoken(fromMarkdown md: String) -> String? {
         var s = md
         s = replace(s, #"```[\s\S]*?```"#, " Code omitted. ")
+        s = replace(s, #"(?m)(?:^[ \t]*\|.*\|[ \t]*\n?){2,}"#, " There is a table on screen. ")
         s = replace(s, #"!\[[^\]]*\]\([^)]*\)"#, "")
         s = replace(s, #"\[([^\]]+)\]\([^)]*\)"#, "$1")
         s = replace(s, #"https?://\S+"#, "a link")

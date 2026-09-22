@@ -148,7 +148,27 @@ final class ChatStore {
 
     // MARK: Sending
 
-    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil, viaVoice: Bool = false) async {
+    /// Extra `prompt.submit` fields for a spoken turn: Hermes prepends a "you are being listened to"
+    /// note to the model input, plus the recent exchange and whether the person cut the last reply off.
+    struct VoiceTurn {
+        var context: String?
+        var interrupted = false
+        var params: [String: Any] {
+            var p: [String: Any] = ["surface": "voice-live"]
+            if let context, !context.isEmpty { p["voice_context"] = context }
+            if interrupted { p["interrupted"] = true }
+            return p
+        }
+    }
+
+    /// The last few spoken exchanges, newest last, for `voice_context`.
+    func recentExchange(limit: Int = 6) -> String {
+        items.filter { $0.kind == .user || $0.kind == .assistant }.suffix(limit).map {
+            "\($0.kind == .user ? "User" : "Hermes"): \(String($0.text.prefix(300)))"
+        }.joined(separator: "\n")
+    }
+
+    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil, voice: VoiceTurn? = nil) async {
         guard let client, client.isConnected else { error = GatewayError.notConnected.localizedDescription; return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
@@ -187,7 +207,7 @@ final class ChatStore {
             }
             if body.isEmpty { body = "See the attached image." }
 
-            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name), isVoice: viaVoice))
+            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name), isVoice: voice != nil))
 
             // `/skill args` goes through the server's slash dispatcher, like the TUI.
             var submitText = body
@@ -210,7 +230,9 @@ final class ChatStore {
             }
 
             running.insert(sid)
-            let r = try await client.request("prompt.submit", ["session_id": sid, "text": submitText], timeout: 60)
+            var params: [String: Any] = ["session_id": sid, "text": submitText]
+            if let voice { params.merge(voice.params) { a, _ in a } }
+            let r = try await client.request("prompt.submit", params, timeout: 60)
             if let status = r["status"] as? String, status == "queued" {
                 transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Queued behind the running turn"))
             }
@@ -236,16 +258,18 @@ final class ChatStore {
     }
 
     /// Replace the running turn's direction with new text (interrupts and continues).
-    func redirect(_ text: String, viaVoice: Bool = false) async {
+    func redirect(_ text: String, voice: VoiceTurn? = nil) async {
         guard let client, let sid = session?.liveId, isRunning else { return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         do {
             var item = ChatItem(kind: .user, text: text)
             item.isSteer = true
-            item.isVoice = viaVoice
+            item.isVoice = voice != nil
             transcripts[sid, default: []].append(item)
-            _ = try await client.request("session.redirect", ["session_id": sid, "text": text], timeout: 60)
+            var params: [String: Any] = ["session_id": sid, "text": text]
+            if let voice { params.merge(voice.params) { a, _ in a } }
+            _ = try await client.request("session.redirect", params, timeout: 60)
         } catch {
             self.error = error.localizedDescription
         }

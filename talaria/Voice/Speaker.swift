@@ -25,9 +25,20 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
             ?? AVSpeechSynthesisVoice(language: lang)
     }()
 
+    static let voiceKey = "talaria.voiceIdentifier"
+
+    /// Installed voices for the current language, best quality first.
+    static func availableVoices() -> [AVSpeechSynthesisVoice] {
+        let lang = AVSpeechSynthesisVoice.currentLanguageCode()
+        let prefix = lang.split(separator: "-").first.map(String.init) ?? lang
+        return AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix(prefix) }
+            .sorted { ($0.language == lang ? 0 : 1, -$0.quality.rawValue, $0.name) < ($1.language == lang ? 0 : 1, -$1.quality.rawValue, $1.name) }
+    }
+
     func speak(_ text: String) {
         let u = AVSpeechUtterance(string: text)
-        u.voice = voice
+        u.voice = UserDefaults.standard.string(forKey: Self.voiceKey).flatMap(AVSpeechSynthesisVoice.init(identifier:)) ?? voice
         u.prefersAssistiveTechnologySettings = false
         queued += 1
         isSpeaking = true
