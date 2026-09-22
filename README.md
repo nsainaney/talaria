@@ -56,11 +56,12 @@ Everything runs on the phone; nothing new is needed on the server.
   `cronjob_manage` tools and asks before creating reminders.
 - **Server voice (Pocket TTS).** With *Hermes voice* on in Settings, each spoken sentence is
   fetched from the dashboard's `POST /api/audio/speak`, which runs the profile's TTS provider.
-  On prometheus that is Kyutai's reference Pocket TTS served warm by the `pocket-tts` docker
-  container (image built from `hermes/pocket-tts/Dockerfile`, port 127.0.0.1:8131) through the
-  `say-http` wrapper in `/mnt/space/services/hermes/pocket-tts/`; provider block in nix-config
-  `services/hermes.nix`. A warm sentence takes 0.3 to 1 s. Change the voice by editing
-  `voice = "alba"` there and deploying; the English voices are listed in that block. If the
+  On prometheus that is Kyutai's reference Pocket TTS served warm by the nix-managed
+  `podman-pocket-tts` container on 127.0.0.1:8131, declared in nix-config
+  `services/hermes/pocket-tts.nix` together with the `say-http` wrapper Hermes calls and the
+  `tts` provider block (voice `vera`). A warm sentence takes 0.3 to 1 s. Change the voice by
+  editing `voice` there and deploying. `hermes/pocket-tts/` in this repo keeps the Dockerfile
+  and wrapper source for reference. If the
   server cannot synthesize, the phone voice takes over for the rest of the reply.
   (The `pocket-tts.cpp` bundle from the benchmark is still there as `say`, but its
   end-of-speech detection babbles on short text, so it is no longer used.)
