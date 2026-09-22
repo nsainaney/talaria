@@ -20,8 +20,10 @@ final class ServerSettings {
     var voiceEnabled: Bool { didSet { UserDefaults.standard.set(voiceEnabled, forKey: Self.voiceKey) } }
     /// Speak replies with the voice configured on the Hermes server (Pocket TTS) instead of the phone's.
     var serverVoice: Bool { didSet { UserDefaults.standard.set(serverVoice, forKey: Self.serverVoiceKey) } }
-    /// While voice mode is on, switch the session to a faster model alias with low reasoning effort.
+    /// While voice mode is on, run the session at low reasoning effort (the model stays unless an alias is named).
     var voiceFastModel: Bool { didSet { UserDefaults.standard.set(voiceFastModel, forKey: Self.fastVoiceKey) } }
+    /// Optional model alias for spoken turns; empty keeps the session's model. Note the alias runs the
+    /// whole agent loop (tools included), not just the chat.
     var voiceModelAlias: String { didSet { UserDefaults.standard.set(voiceModelAlias, forKey: Self.voiceAliasKey) } }
 
     init() {
@@ -31,7 +33,7 @@ final class ServerSettings {
         voiceEnabled = UserDefaults.standard.object(forKey: Self.voiceKey) as? Bool ?? true
         serverVoice = UserDefaults.standard.object(forKey: Self.serverVoiceKey) as? Bool ?? true
         voiceFastModel = UserDefaults.standard.object(forKey: Self.fastVoiceKey) as? Bool ?? true
-        voiceModelAlias = UserDefaults.standard.string(forKey: Self.voiceAliasKey) ?? "fast"
+        voiceModelAlias = UserDefaults.standard.string(forKey: Self.voiceAliasKey) ?? ""
     }
 
     var isConfigured: Bool { url != nil && !username.isEmpty && !password.isEmpty }

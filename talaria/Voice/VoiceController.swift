@@ -147,23 +147,24 @@ final class VoiceController {
 
     private func applyFastModelIfNeeded() async {
         guard settings.voiceFastModel else { return }
-        let alias = settings.voiceModelAlias.trimmingCharacters(in: .whitespaces)
-        guard !alias.isEmpty else { return }
         await chat.ensureSession()
         guard let sid = chat.session?.liveId, fastAppliedTo != sid else { return }
         restoreTo = chat.currentInfo
-        if await chat.setSessionConfig("model", alias) { fastAppliedTo = sid }
+        fastAppliedTo = sid
+        let alias = settings.voiceModelAlias.trimmingCharacters(in: .whitespaces)
+        if !alias.isEmpty { _ = await chat.setSessionConfig("model", alias) }
         _ = await chat.setSessionConfig("reasoning", "low")
     }
 
     private func restoreModel() {
         guard let sid = fastAppliedTo else { return }
         fastAppliedTo = nil
-        guard chat.session?.liveId == sid, let r = restoreTo, !r.model.isEmpty else { return }
+        guard chat.session?.liveId == sid, let r = restoreTo else { return }
         restoreTo = nil
+        let switchedModel = !settings.voiceModelAlias.trimmingCharacters(in: .whitespaces).isEmpty
         Task {
-            _ = await chat.setSessionConfig("model", r.model)
-            if !r.effort.isEmpty { _ = await chat.setSessionConfig("reasoning", r.effort) }
+            if switchedModel, !r.model.isEmpty { _ = await chat.setSessionConfig("model", r.model) }
+            _ = await chat.setSessionConfig("reasoning", r.effort.isEmpty ? "medium" : r.effort)
         }
     }
 
