@@ -15,6 +15,12 @@ struct VoiceBar: View {
                     .frame(width: 22)
                 Text(label(for: voice)).font(.subheadline.weight(.medium))
                 Spacer()
+                if voice.state == .listening {
+                    Capsule().fill(voice.micLevel > 0.02 ? Color.accentColor : Color(.tertiarySystemFill))
+                        .frame(width: 4 + CGFloat(voice.micLevel) * 56, height: 6)
+                        .animation(.linear(duration: 0.1), value: voice.micLevel)
+                        .accessibilityLabel("Microphone level")
+                }
                 Button { voice.stop() } label: {
                     Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.secondary)
                 }

@@ -22,24 +22,30 @@ protocol AudioOutput: AnyObject {
     func stopPlayback()
 }
 
+private let log = Logger(subsystem: "com.sainaney.talaria", category: "voice")
+
 /// Streams microphone audio into on-device speech recognition and reports the text of the
 /// current utterance as it forms. The audio engine runs with voice processing so the phone's own
-/// speech output is echo-cancelled instead of transcribed.
+/// speech output is echo-cancelled instead of transcribed; reply audio plays through the same
+/// engine so the canceller has the right reference.
 @MainActor
 final class SpeechRecognizer: AudioOutput {
     /// Latest transcript of the utterance in progress (partial or final).
     var onText: ((String) -> Void)?
     var onError: ((Error) -> Void)?
+    /// Microphone level 0…1, about ten times a second, for a meter.
+    var onLevel: ((Float) -> Void)?
     private(set) var isRunning = false
 
     private let engine = AVAudioEngine()
-    /// Reply audio plays through the same engine, so the voice processor cancels it from the mic.
     private let playerNode = AVAudioPlayerNode()
     let playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
     private var recognizer: SFSpeechRecognizer?
     private var task: SFSpeechRecognitionTask?
     private let request = OSAllocatedUnfairLock<SFSpeechAudioBufferRecognitionRequest?>(initialState: nil)
+    private let level = OSAllocatedUnfairLock<(peak: Float, buffers: Int)>(initialState: (0, 0))
     private var generation = 0
+    private var meterTask: Task<Void, Never>?
 
     init() {
         engine.attach(playerNode)
@@ -64,17 +70,37 @@ final class SpeechRecognizer: AudioOutput {
         try session.setActive(true)
 
         let input = engine.inputNode
-        try? input.setVoiceProcessingEnabled(true)
-        let format = input.outputFormat(forBus: 0)
-        let box = request
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
-            box.withLock { $0?.append(buffer) }
-        }
+        do { try input.setVoiceProcessingEnabled(true) } catch { log.error("voice processing unavailable: \(error.localizedDescription)") }
+        // Output graph first, then prepare, then read the input format the I/O unit settled on.
         engine.connect(playerNode, to: engine.mainMixerNode, format: playbackFormat)
         engine.prepare()
+        let format = input.outputFormat(forBus: 0)
+        log.info("engine input format \(format.sampleRate) Hz, \(format.channelCount) ch; voice processing \(input.isVoiceProcessingEnabled); on-device STT \(r.supportsOnDeviceRecognition)")
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceError.recognizerUnavailable }
+        let box = request
+        let meter = level
+        input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
+            box.withLock { $0?.append(buffer) }
+            var peak: Float = 0
+            if let ch = buffer.floatChannelData?[0] {
+                for i in stride(from: 0, to: Int(buffer.frameLength), by: 16) { peak = max(peak, abs(ch[i])) }
+            }
+            meter.withLock { $0 = (max($0.peak, peak), $0.buffers + 1) }
+        }
         try engine.start()
         isRunning = true
         beginUtterance()
+        meterTask = Task { [weak self] in
+            var reported = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard let self else { return }
+                let (peak, buffers) = self.level.withLock { let v = $0; $0.peak = 0; return v }
+                if buffers > reported, reported == 0 { log.info("first mic buffer received") }
+                reported = buffers
+                self.onLevel?(min(1, peak * 4))
+            }
+        }
     }
 
     /// Close the current utterance and start listening for the next one.
@@ -87,12 +113,14 @@ final class SpeechRecognizer: AudioOutput {
         guard isRunning else { return }
         isRunning = false
         generation += 1
+        meterTask?.cancel()
         task?.cancel()
         task = nil
         request.withLock { $0?.endAudio(); $0 = nil }
         playerNode.stop()
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        level.withLock { $0 = (0, 0) }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -128,6 +156,7 @@ final class SpeechRecognizer: AudioOutput {
                 if isFinal {
                     self.beginUtterance()
                 } else if let failure {
+                    log.error("recognizer error \(failure.domain) \(failure.code): \(failure.localizedDescription)")
                     // 1110 is "no speech detected" after a long silence; anything else is worth showing.
                     if !(failure.domain == "kAFAssistantErrorDomain" && failure.code == 1110) { self.onError?(failure) }
                     try? await Task.sleep(for: .milliseconds(300))

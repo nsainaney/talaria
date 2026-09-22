@@ -12,6 +12,8 @@ final class VoiceController {
     private(set) var answering: Answering = .none
     /// Live text of the utterance being spoken by the person.
     private(set) var transcript = ""
+    /// Microphone level 0…1 for the meter in the voice bar.
+    private(set) var micLevel: Float = 0
     var error: String?
     var isActive: Bool { state != .idle }
 
@@ -42,6 +44,7 @@ final class VoiceController {
         speaker.output = recognizer
         recognizer.onText = { [weak self] in self?.heard($0) }
         recognizer.onError = { [weak self] in self?.error = $0.localizedDescription }
+        recognizer.onLevel = { [weak self] in self?.micLevel = $0 }
         speaker.onFinished = { [weak self] in self?.finishedSpeaking() }
         chat.signal = { [weak self] in self?.handle($0) }
     }
