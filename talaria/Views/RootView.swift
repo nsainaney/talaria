@@ -5,6 +5,8 @@ struct RootView: View {
     @State private var showSidebar = false
     @State private var showSkills = false
     @State private var showSettings = false
+    @State private var showRecording = false
+    private let recorder = BackgroundRecorder.shared
 
     var body: some View {
         NavigationStack {
@@ -43,10 +45,15 @@ struct RootView: View {
         .task {
             if model.settings.isConfigured { await model.connect() } else { showSettings = true }
         }
+        .fullScreenCover(isPresented: $showRecording) { RecordingModeView().environment(model) }
+        .onChange(of: recorder.state.isActive) { _, active in
+            if active { showRecording = true }
+        }
         .onOpenURL { url in
-            // talaria://record from the widget when the app has not been granted the microphone yet.
+            // talaria://record from the widget: start recording and enter recording mode.
             guard url.scheme == "talaria", url.host() == "record" else { return }
-            Task { try? await BackgroundRecorder.shared.start() }
+            showRecording = true
+            if !recorder.state.isActive { Task { try? await recorder.start() } }
         }
     }
 

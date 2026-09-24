@@ -4,6 +4,7 @@ import SwiftUI
 struct RecordingBanner: View {
     @Environment(AppModel.self) private var model
     private let rec = BackgroundRecorder.shared
+    @State private var showRecording = false
 
     var body: some View {
         let s = rec.state
@@ -46,6 +47,9 @@ struct RecordingBanner: View {
             .font(.body)
             .padding(.horizontal, 14).padding(.vertical, 6)
             .background(.bar)
+            .contentShape(Rectangle())
+            .onTapGesture { showRecording = true }
+            .fullScreenCover(isPresented: $showRecording) { RecordingModeView().environment(model) }
         }
     }
 

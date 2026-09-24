@@ -96,7 +96,7 @@ struct RecorderWidgetView: View {
             } else if state.phase == .uploading {
                 Image(systemName: "icloud.and.arrow.up").font(.title2)
             } else {
-                Button(intent: StartRecordingIntent()) { Image(systemName: "record.circle").font(.title2) }
+                Link(destination: RecordingShared.recordURL) { Image(systemName: "mic.fill").font(.title2) }
             }
         }
         .buttonStyle(.plain)
@@ -116,26 +116,26 @@ struct RecorderWidgetView: View {
             if state.isActive {
                 RecorderButtons(state: state, compact: true)
             } else if state.phase != .uploading {
-                Button(intent: StartRecordingIntent()) { Image(systemName: "record.circle") }
+                Link(destination: RecordingShared.recordURL) { Image(systemName: "mic.fill") }
                     .buttonStyle(.bordered).controlSize(.small).tint(.red)
             }
         }
     }
 }
 
-/// The big red Record button.
+/// The mic button: opens Talaria into recording mode. iOS does not let the app start the
+/// microphone from the background, so this is a link rather than an intent.
 struct RecordButton: View {
     let size: CGFloat
 
     var body: some View {
-        Button(intent: StartRecordingIntent()) {
+        Link(destination: RecordingShared.recordURL) {
             ZStack {
-                Circle().strokeBorder(.secondary.opacity(0.5), lineWidth: 3)
-                Circle().fill(.red).padding(6)
+                Circle().fill(.red)
+                Image(systemName: "mic.fill").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(.white)
             }
             .frame(width: size, height: size)
         }
-        .buttonStyle(.plain)
         .accessibilityLabel("Record")
     }
 }
