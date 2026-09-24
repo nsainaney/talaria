@@ -26,6 +26,7 @@ const I = {
   trash: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   more: '<svg class="icon fill" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   resend: '<svg class="icon" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/><path d="M9.5 12.5L12 15l4-4"/></svg>',
+  wave: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>',
   checkc: '<svg class="icon fill" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.5 14.5L6 12l1.5-1.5 3 3 6-6L18 9z"/></svg>',
 };
 const phone = (name, inner, extra = '') => `<div class="frame"><h2>${name}</h2><div class="phone ${extra}"><div class="island"></div><div class="status"><span>9:41</span><span>●●●</span></div>${inner}<div class="home"></div></div></div>`;

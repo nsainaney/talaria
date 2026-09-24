@@ -132,3 +132,8 @@
 .alert .at { font-weight: 600; font-size: 17px; } .alert .am { font-size: 13px; color: var(--muted); margin: 6px 0 14px; line-height: 1.4; }
 .alert .ab { display: flex; border-top: 1px solid var(--line); margin: 0 -16px; } .alert .ab span { flex: 1; padding: 12px; font-size: 16px; color: var(--accent); }
 .alert .ab span + span { border-left: 1px solid var(--line); } .alert .ab .go { font-weight: 600; }
+
+.fab.three .b { flex: 1; flex-direction: column; gap: 4px; padding: 9px 4px; font-size: 12px; }
+.fab.three .b .icon { width: 20px; height: 20px; }
+.fab.three .b.voice { background: var(--glass); color: var(--accent); border: 1px solid var(--line); }
+.fab.three .b.mic { flex: 1; }
