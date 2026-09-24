@@ -80,6 +80,7 @@ final class RecordingLibrary {
     }
 
     func delete(_ item: Item) {
+        if PlaybackPlayer.shared.playingName == item.name { PlaybackPlayer.shared.stop() }
         try? FileManager.default.removeItem(at: item.url)
         sent[item.name] = nil
         errors[item.name] = nil
