@@ -147,3 +147,7 @@
 .menu:not(.filtermenu) { left: auto; right: 54px; transform: none; top: 62px; width: 230px; }
 .vmodel { display: flex; justify-content: center; padding-top: 6px; }
 .vbuttons { padding-top: 12px; }
+
+.opts { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; font-size: 13px; color: #444; }
+.opts span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 8px; background: #fff; border: 1px solid rgba(0,0,0,.1); }
+.opts .icon { width: 18px; height: 18px; color: #3e63f0; }
