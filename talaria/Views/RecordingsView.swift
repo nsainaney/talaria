@@ -6,6 +6,7 @@ struct RecordingsView: View {
     @Environment(\.dismiss) private var dismiss
     private let library = RecordingLibrary.shared
     private let recorder = BackgroundRecorder.shared
+    private let player = PlaybackPlayer.shared
 
     var body: some View {
         NavigationStack {
@@ -38,6 +39,7 @@ struct RecordingsView: View {
             }
             .refreshable { library.refresh(keeping: recorder.state.fileName) }
             .task { library.refresh(keeping: recorder.state.isActive ? recorder.state.fileName : nil) }
+            .onDisappear { player.stop() }
         }
     }
 
@@ -50,11 +52,21 @@ struct RecordingsView: View {
         library.send(item, client: client)
     }
 
+    private func isPlayable(_ item: RecordingLibrary.Item) -> Bool {
+        !(recorder.state.isActive && recorder.state.fileName == item.name)
+    }
+
     private func row(_ item: RecordingLibrary.Item) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: item.sending ? "icloud.and.arrow.up" : (item.isSent ? "checkmark.circle.fill" : "circle.dashed"))
-                .foregroundStyle(item.sending ? .blue : (item.isSent ? .green : .secondary))
-                .font(.title3)
+        let current = player.playingName == item.name
+        return HStack(spacing: 12) {
+            Button {
+                if isPlayable(item) { player.toggle(item.url) }
+            } label: {
+                Image(systemName: current && player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(isPlayable(item) ? Color.accentColor : Color.secondary)
+            }
+            .disabled(!isPlayable(item))
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
                     .font(.body.weight(.medium))
@@ -64,8 +76,18 @@ struct RecordingsView: View {
                 }
                 .font(.caption).foregroundStyle(.secondary)
                 Text(status(item)).font(.caption).foregroundStyle(item.error == nil ? Color.secondary : Color.red).lineLimit(2)
+                if current, player.duration > 0 {
+                    HStack(spacing: 8) {
+                        Text(RecordingState.stamp(player.position)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        Slider(value: Binding(get: { player.position / player.duration }, set: { player.seek(to: $0) }))
+                            .controlSize(.mini)
+                        Text(RecordingState.stamp(player.duration)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
             }
             Spacer()
+            Image(systemName: item.sending ? "icloud.and.arrow.up" : (item.isSent ? "checkmark.circle.fill" : "circle.dashed"))
+                .foregroundStyle(item.sending ? Color.blue : (item.isSent ? Color.green : Color.secondary))
             if item.sending {
                 ProgressView()
             } else if let id = item.sentId, let client = model.settings.speakr {
