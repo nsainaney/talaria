@@ -22,7 +22,7 @@ struct RecordingsView: View {
                         .swipeActions(edge: .leading) {
                             if canSend(item) {
                                 Button { send(item) } label: {
-                                    Label(item.isSent ? "Resend" : "Send", systemImage: "icloud.and.arrow.up")
+                                    Label("Send", systemImage: "icloud.and.arrow.up")
                                 }
                                 .tint(.blue)
                             }
@@ -77,7 +77,7 @@ struct RecordingsView: View {
         .buttonStyle(.borderless)
         .contextMenu {
             if canSend(item) {
-                Button { send(item) } label: { Label(item.isSent ? "Resend to Speakr" : "Send to Speakr", systemImage: "icloud.and.arrow.up") }
+                Button { send(item) } label: { Label("Send to Speakr", systemImage: "icloud.and.arrow.up") }
             }
             ShareLink(item: item.url) { Label("Share audio", systemImage: "square.and.arrow.up") }
             Button(role: .destructive) { library.delete(item) } label: { Label("Delete", systemImage: "trash") }
