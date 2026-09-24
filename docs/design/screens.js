@@ -33,7 +33,7 @@ const I = {
 const phone = (name, inner, extra = '') => `<div class="frame"><h2>${name}</h2><div class="phone ${extra}"><div class="island"></div><div class="status"><span>9:41</span><span>●●●</span></div>${inner}<div class="home"></div></div></div>`;
 
 const chat = phone('Chat', `
-  <div class="nav">${I.sidebar}<div class="title">Home lab</div><div class="group">${I.mic}${I.sparkles}${I.compose}${I.gear}</div></div>
+  <div class="nav">${I.sidebar}<div class="title">Home lab</div><div class="group">${I.wave}${I.sparkles}${I.compose}${I.gear}</div></div>
   <div class="messages">
     <div class="msg user"><div class="label">${I.mic} Voice</div><div class="bubble">What's eating the disk on the server?</div></div>
     <div class="msg assistant"><div class="bubble">
@@ -46,7 +46,7 @@ const chat = phone('Chat', `
     <div class="card approval"><div class="h">${I.shield} Hermes wants to run a command</div><div class="cmd">rm -rf /mnt/space/services/hermes/pocket-tts ~/voice-bench</div><div class="actions"><button class="deny">Deny</button><button class="once">Allow once</button><button class="always">Always</button></div></div>
   </div>
   <div class="composer"><div class="row"><span class="pill model"><i class="dot"></i>glm-5.3 · medium</span><span style="flex:1"></span><span class="pill sess">2 queued</span></div>
-  <div class="row"><span class="round plus">${I.plus}</span><div class="field"><span>Message Hermes</span></div><span class="round micb">${I.micf}</span><span class="round sendb">${I.send}</span></div></div>`);
+  <div class="row"><span class="round plus">${I.plus}</span><div class="field"><span>Message Hermes</span></div><span class="round sendb">${I.send}</span></div></div>`);
 
 const rec = phone('Recording mode', `
   <div class="rec"><div class="bar">${I.list}${I.chev}</div>
