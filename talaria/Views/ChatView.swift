@@ -4,15 +4,12 @@ import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(AppModel.self) private var model
-    @Binding var showSkills: Bool
     @State private var draft = ""
     @State private var attachments: [Attachment] = []
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showFiles = false
     @State private var showCamera = false
-    @State private var showMeeting = false
-    @State private var showRecordings = false
     @State private var showModelPicker = false
     @FocusState private var composerFocused: Bool
 
@@ -59,8 +56,6 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { attachments.append(.image($0)) }.ignoresSafeArea()
         }
-        .sheet(isPresented: $showMeeting) { MeetingView() }
-        .sheet(isPresented: $showRecordings) { RecordingsView() }
         .sheet(isPresented: $showModelPicker) { ModelPickerView() }
         .onReceive(NotificationCenter.default.publisher(for: .invokeSkill)) { note in
             guard let name = note.object as? String else { return }
@@ -119,8 +114,7 @@ struct ChatView: View {
                         Image(systemName: "arrow.down")
                             .font(.body.weight(.semibold))
                             .padding(10)
-                            .background(.regularMaterial, in: Circle())
-                            .shadow(radius: 3)
+                            .glass(20)
                     }
                     .padding(16)
                     .transition(.scale.combined(with: .opacity))
@@ -241,36 +235,21 @@ struct ChatView: View {
                         Button { showCamera = true } label: { Label("Camera", systemImage: "camera") }
                     }
                     Button { showFiles = true } label: { Label("Files", systemImage: "folder") }
-                    if model.settings.voiceEnabled {
-                        Divider()
-                        Button { showMeeting = true } label: { Label("Record meeting", systemImage: "record.circle") }
-                        Button { Task { try? await BackgroundRecorder.shared.start() } } label: { Label("Record to Speakr", systemImage: "waveform.badge.mic") }
-                            .disabled(BackgroundRecorder.shared.state.isActive)
-                        Button { showRecordings = true } label: { Label("Recordings", systemImage: "list.bullet") }
-                    }
                 } label: {
                     Image(systemName: "plus").font(.body.weight(.medium))
                         .frame(width: 36, height: 36)
-                        .background(Color(.tertiarySystemFill), in: Circle())
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 }
                 .disabled(chat.isRunning || !model.gateway.isConnected)
-                if model.settings.voiceEnabled && !model.voice.isActive {
-                    Button { composerFocused = false; Task { await model.voice.start() } } label: {
-                        Image(systemName: "mic").font(.body.weight(.medium))
-                            .frame(width: 36, height: 36)
-                            .background(Color(.tertiarySystemFill), in: Circle())
-                    }
-                    .disabled(!model.gateway.isConnected)
-                    .accessibilityLabel("Talk to Hermes")
-                }
                 Button { composerFocused = false; showModelPicker = true } label: {
                     HStack(spacing: 4) {
+                        Circle().fill(Theme.accent).frame(width: 6, height: 6)
                         Text(chat.modelLabel ?? "Model").lineLimit(1)
                         Image(systemName: "chevron.up.chevron.down").font(.caption2)
                     }
                     .font(.subheadline).foregroundStyle(.primary)
                     .padding(.horizontal, 12).frame(height: 36)
-                    .background(Color(.tertiarySystemFill), in: Capsule())
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
                 .disabled(!model.gateway.isConnected)
                 Spacer()
@@ -278,11 +257,8 @@ struct ChatView: View {
             }
         }
         .padding(14)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color(.separator).opacity(0.5)))
-        .shadow(color: .black.opacity(0.06), radius: 10, y: 2)
+        .glass(Theme.corner)
         .padding(.horizontal, 10).padding(.bottom, 6)
-        .background(.clear)
     }
 
     /// Stop while a turn runs and nothing is typed; otherwise send (queued during a run).
@@ -290,7 +266,7 @@ struct ChatView: View {
         if chat.isRunning && !hasDraft {
             Button { Task { await chat.stop() } } label: {
                 Image(systemName: "stop.fill").font(.body.weight(.bold)).foregroundStyle(.white)
-                    .frame(width: 40, height: 40).background(Color.red, in: Circle())
+                    .frame(width: 40, height: 40).background(Color.red, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         } else if chat.isRunning {
             Button { Task { await submitWhileRunning(.queue) } } label: { sendGlyph(enabled: true) }
@@ -312,7 +288,7 @@ struct ChatView: View {
         Image(systemName: "arrow.up").font(.body.weight(.bold))
             .foregroundStyle(enabled ? Color.white : Color.secondary)
             .frame(width: 40, height: 40)
-            .background(enabled ? Color.accentColor : Color(.tertiarySystemFill), in: Circle())
+            .background(enabled ? Color.accentColor : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .animation(.easeInOut(duration: 0.15), value: enabled)
     }
 

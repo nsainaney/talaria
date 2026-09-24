@@ -21,7 +21,9 @@ final class RecordingLibrary {
         var sentAt: Date?
         var sending = false
         var error: String?
+        var title: String?
         var isSent: Bool { sentId != nil }
+        var displayTitle: String { title ?? "Recording" }
     }
 
     private(set) var items: [Item] = []
@@ -32,15 +34,31 @@ final class RecordingLibrary {
     @ObservationIgnored private var errors: [String: String] = [:]
     @ObservationIgnored private let log = Logger(subsystem: "com.sainaney.talaria", category: "library")
     private static let sentKey = "recordings.sent"
+    private static let titlesKey = "recordings.titles"
+    @ObservationIgnored private var titles: [String: String] = [:]
+
+    /// Documents/Meetings, visible in the Files app.
+    static func directory() -> URL {
+        let dir = URL.documentsDirectory.appendingPathComponent("Meetings", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func rename(_ name: String, to title: String) {
+        if title.isEmpty || title == "Recording" { titles[name] = nil } else { titles[name] = title }
+        UserDefaults.standard.set(titles, forKey: Self.titlesKey)
+        refresh()
+    }
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: Self.sentKey),
            let s = try? JSONDecoder().decode([String: Sent].self, from: data) { sent = s }
+        titles = UserDefaults.standard.dictionary(forKey: Self.titlesKey) as? [String: String] ?? [:]
     }
 
     /// Re-read the folder, drop files past the retention period, and rebuild the list.
     func refresh(keeping active: String? = nil) {
-        let dir = MeetingRecorder.recordingsDirectory()
+        let dir = Self.directory()
         let keys: [URLResourceKey] = [.contentModificationDateKey, .creationDateKey, .fileSizeKey]
         let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys)) ?? []
         var list: [Item] = []
@@ -56,7 +74,7 @@ final class RecordingLibrary {
             let name = url.lastPathComponent
             let duration = name == active ? nil : (try? AVAudioPlayer(contentsOf: url))?.duration
             list.append(Item(name: name, url: url, date: date, size: Int64(v?.fileSize ?? 0), duration: duration,
-                             sentId: sent[name]?.id, sentAt: sent[name]?.at, sending: sending.contains(name), error: errors[name]))
+                             sentId: sent[name]?.id, sentAt: sent[name]?.at, sending: sending.contains(name), error: errors[name], title: titles[name]))
         }
         items = list.sorted { $0.date > $1.date }
         // Forget sent records for files that no longer exist.
@@ -84,6 +102,7 @@ final class RecordingLibrary {
         try? FileManager.default.removeItem(at: item.url)
         sent[item.name] = nil
         errors[item.name] = nil
+        titles[item.name] = nil
         refresh()
     }
 

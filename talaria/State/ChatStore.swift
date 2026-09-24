@@ -66,6 +66,7 @@ final class ChatStore {
         set { transcripts[currentKey] = newValue }
     }
     var isRunning: Bool { session.map { running.contains($0.liveId) } ?? false }
+    func isRunning(_ s: HermesSession) -> Bool { running.contains(s.liveId) || running.contains(s.id) }
     var statusText: String? { session.flatMap { statusLines[$0.liveId] } }
 
     /// "glm-5.3 · Med" style label for the composer pill; nil until a session reports it.

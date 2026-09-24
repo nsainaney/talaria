@@ -129,7 +129,7 @@ final class BackgroundRecorder: RecordingCommands {
         }
 
         let name = Self.fileName()
-        let url = MeetingRecorder.recordingsDirectory().appendingPathComponent(name)
+        let url = RecordingLibrary.directory().appendingPathComponent(name)
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44_100,

@@ -14,6 +14,8 @@ final class AppModel {
     var sessionsError: String?
     var isLoadingSessions = false
     var serverVersion: String?
+    /// The full-screen recorder is showing.
+    var showRecorder = false
 
     init() {
         skills = SkillsStore(pins: pins)

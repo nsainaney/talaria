@@ -23,20 +23,23 @@ struct ChatRow: View {
                             .background(Color(.secondarySystemBackground), in: Capsule())
                     }
                     if !item.text.isEmpty {
+                        let muted = item.isSteer || item.isQueued
                         VStack(alignment: .leading, spacing: 2) {
                             if item.isSteer {
                                 Label("Steer", systemImage: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
                             } else if item.isQueued {
                                 Label("Queued", systemImage: "clock").font(.caption2).foregroundStyle(.secondary)
                             } else if item.isVoice {
-                                Label("Voice", systemImage: "mic.fill").font(.caption2).foregroundStyle(.secondary)
+                                Label("Voice", systemImage: "waveform").font(.caption2).foregroundStyle(.white.opacity(0.8))
                             } else if item.isRemote {
-                                Label("From another client", systemImage: "desktopcomputer").font(.caption2).foregroundStyle(.secondary)
+                                Label("From another client", systemImage: "desktopcomputer").font(.caption2).foregroundStyle(.white.opacity(0.8))
                             }
                             Text(verbatim: item.text).textSelection(.enabled)
                         }
+                        .foregroundStyle(muted ? Color.primary : Color.white)
                         .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(Color.accentColor.opacity(item.isSteer || item.isQueued ? 0.10 : 0.18), in: RoundedRectangle(cornerRadius: 16))
+                        .background(muted ? Color.accentColor.opacity(0.12) : Color.accentColor,
+                                    in: UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14, bottomTrailingRadius: 4, topTrailingRadius: 14, style: .continuous))
                     }
                 }
             }

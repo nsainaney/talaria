@@ -50,6 +50,13 @@ final class PlaybackPlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
+    /// Jump by a number of seconds within the file that is playing (or paused).
+    func skip(_ seconds: TimeInterval, in url: URL) {
+        guard playingName == url.lastPathComponent, let player else { return }
+        player.currentTime = max(0, min(player.duration, player.currentTime + seconds))
+        position = player.currentTime
+    }
+
     func seek(to fraction: Double) {
         guard let player else { return }
         player.currentTime = max(0, min(player.duration, fraction * player.duration))
