@@ -23,7 +23,9 @@ struct RootView: View {
                         Button { showSettings = true } label: { Image(systemName: "gearshape") }
                     }
                 }
-                .safeAreaInset(edge: .top) { connectionBanner }
+                .safeAreaInset(edge: .top) {
+                    VStack(spacing: 0) { connectionBanner; RecordingBanner() }
+                }
         }
         .overlay { sidebarOverlay }
         .sheet(isPresented: $showSkills) { SkillsView() }
@@ -40,6 +42,11 @@ struct RootView: View {
         }
         .task {
             if model.settings.isConfigured { await model.connect() } else { showSettings = true }
+        }
+        .onOpenURL { url in
+            // talaria://record from the widget when the app has not been granted the microphone yet.
+            guard url.scheme == "talaria", url.host() == "record" else { return }
+            Task { try? await BackgroundRecorder.shared.start() }
         }
     }
 

@@ -7,6 +7,9 @@ struct MeetingView: View {
     @State private var recorder = MeetingRecorder()
     @State private var instruction = ""
     @State private var sending = false
+    @State private var uploading = false
+    @State private var uploaded: SpeakrClient.Uploaded?
+    @State private var uploadError: String?
 
     static let fallbackInstruction = "Digest the attached meeting transcript: summarize it in a few sentences, list decisions and action items with owners and dates, save the durable facts to memory, and propose reminders for dated follow-ups. Ask before creating anything."
 
@@ -90,15 +93,53 @@ struct MeetingView: View {
             }
             .buttonStyle(.borderedProminent).controlSize(.large)
             .disabled(sending || !model.gateway.isConnected || instruction.trimmingCharacters(in: .whitespaces).isEmpty)
-            if let url = recorder.fileURL {
-                Text("Audio saved to Files › Talaria › Meetings › \(url.lastPathComponent)")
-                    .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            }
+            speakrControls
+        } else if recorder.fileURL != nil {
+            speakrControls
         } else {
             Button { Task { await recorder.start() } } label: {
                 Label("Start recording", systemImage: "record.circle").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).controlSize(.large)
+        }
+    }
+
+    /// Upload the audio to Speakr for server-side transcription (speakers, summary), separate
+    /// from the on-phone transcript that goes to Hermes above.
+    @ViewBuilder private var speakrControls: some View {
+        if let uploaded {
+            Label("Sent to Speakr as recording #\(uploaded.id)", systemImage: "checkmark.circle.fill")
+                .font(.footnote).foregroundStyle(.green)
+            Link("Open in Speakr", destination: uploaded.pageURL).font(.footnote)
+        } else if model.settings.speakr != nil {
+            Button { Task { await sendToSpeakr() } } label: {
+                HStack {
+                    Label("Send to Speakr", systemImage: "waveform.badge.mic")
+                    if uploading { ProgressView().padding(.leading, 6) }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered).controlSize(.large)
+            .disabled(uploading || recorder.fileURL == nil)
+        }
+        if let uploadError {
+            Text(uploadError).font(.footnote).foregroundStyle(.red)
+        }
+        if let url = recorder.fileURL {
+            Text("Audio saved to Files › Talaria › Meetings › \(url.lastPathComponent)")
+                .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+    }
+
+    private func sendToSpeakr() async {
+        guard let client = model.settings.speakr, let file = recorder.fileURL else { return }
+        uploading = true
+        uploadError = nil
+        defer { uploading = false }
+        do {
+            uploaded = try await client.upload(file: file)
+        } catch {
+            uploadError = error.localizedDescription
         }
     }
 

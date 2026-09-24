@@ -41,6 +41,16 @@ struct SettingsView: View {
                     Text("The dashboard must run with a username/password provider (HERMES_DASHBOARD_BASIC_AUTH_*) and be reachable from this device. The password is kept in the Keychain; the dashboard session renews itself silently.")
                 }
                 Section {
+                    TextField("http://host:8899", text: $settings.speakrURL)
+                        .keyboardType(.URL).textContentType(.URL)
+                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    SecureField("API token", text: $settings.speakrToken)
+                } header: {
+                    Text("Speakr (meeting recordings)")
+                } footer: {
+                    Text("Recordings from the Recorder widget and meetings are uploaded here for transcription and summary. Create the token in Speakr under your account's API tokens; it is kept in the Keychain.")
+                }
+                Section {
                     Toggle("Voice mode", isOn: $settings.voiceEnabled)
                     if settings.voiceEnabled {
                         Toggle("Hermes voice (server)", isOn: $settings.serverVoice)

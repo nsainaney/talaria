@@ -13,6 +13,8 @@ final class ServerSettings {
     private static let fastVoiceKey = "talaria.voiceFastModel"
     private static let voiceAliasKey = "talaria.voiceModelAlias"
     private static let bargeInKey = "talaria.voiceBargeIn"
+    private static let speakrURLKey = "speakr.url"
+    private static let speakrTokenKey = "speakr.token"
 
     var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: Self.urlKey) } }
     var username: String { didSet { UserDefaults.standard.set(username, forKey: Self.userKey) } }
@@ -28,6 +30,9 @@ final class ServerSettings {
     var voiceModelAlias: String { didSet { UserDefaults.standard.set(voiceModelAlias, forKey: Self.voiceAliasKey) } }
     /// Keep listening while Hermes speaks so you can talk over it. Off: the mic is ignored until it finishes.
     var voiceBargeIn: Bool { didSet { UserDefaults.standard.set(voiceBargeIn, forKey: Self.bargeInKey) } }
+    /// Speakr (meeting transcription) server; the API token lives in the Keychain.
+    var speakrURL: String { didSet { UserDefaults.standard.set(speakrURL, forKey: Self.speakrURLKey) } }
+    var speakrToken: String { didSet { Keychain.set(speakrToken, for: Self.speakrTokenKey) } }
 
     init() {
         serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? "http://127.0.0.1:9119"
@@ -38,18 +43,27 @@ final class ServerSettings {
         voiceFastModel = UserDefaults.standard.object(forKey: Self.fastVoiceKey) as? Bool ?? true
         voiceModelAlias = UserDefaults.standard.string(forKey: Self.voiceAliasKey) ?? ""
         voiceBargeIn = UserDefaults.standard.object(forKey: Self.bargeInKey) as? Bool ?? true
+        speakrURL = UserDefaults.standard.string(forKey: Self.speakrURLKey) ?? ""
+        speakrToken = Keychain.get(Self.speakrTokenKey) ?? ""
     }
 
-    var isConfigured: Bool { url != nil && !username.isEmpty && !password.isEmpty }
+    var speakr: SpeakrClient? {
+        guard let base = Self.normalize(speakrURL), !speakrToken.isEmpty else { return nil }
+        return SpeakrClient(baseURL: base, token: speakrToken)
+    }
 
-    var url: URL? {
-        var raw = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    static func normalize(_ text: String) -> URL? {
+        var raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.isEmpty { return nil }
         if !raw.contains("://") { raw = "http://" + raw }
         while raw.hasSuffix("/") { raw.removeLast() }
         guard let u = URL(string: raw), u.host != nil else { return nil }
         return u
     }
+
+    var isConfigured: Bool { url != nil && !username.isEmpty && !password.isEmpty }
+
+    var url: URL? { Self.normalize(serverURL) }
 
     var auth: GatewayAuth? {
         guard let url, !username.isEmpty, !password.isEmpty else { return nil }

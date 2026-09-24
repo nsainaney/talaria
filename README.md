@@ -71,3 +71,13 @@ Everything runs on the phone; nothing new is needed on the server.
 Known limits: no speaker labels, English-first, and replies from Hermes take one to two seconds
 plus whatever its tools take. The voice engine is `SFSpeechRecognizer`; iOS 26's
 `SpeechAnalyzer` would be the upgrade for long meetings.
+
+## Recorder widget and Speakr (branch `voice`)
+
+Settings › Speakr takes the Speakr server URL and an API token (created in Speakr under your account's API tokens; kept in the Keychain).
+
+**Recorder widget.** Add the "Recorder" widget to the Home Screen or Lock Screen, or the "Record to Speakr" control to Control Center. Start, Pause, Resume and Stop run in the app process (App Intents conforming to `AudioRecordingIntent`), so the app need not be open. Recording shows as a Live Activity in the Dynamic Island and on the Lock Screen with the same buttons. A phone or FaceTime call pauses the recording; it resumes on its own when the call ends. Stop uploads the file to Speakr on a background transfer (`POST /api/v1/recordings/upload`); the widget, Live Activity and the strip in the app show "Sent to Speakr as recording #N" or why it was not sent. The audio always stays in Files › Talaria › Meetings. The in-app "Record meeting" flow (live transcript to Hermes) also gets a "Send to Speakr" button.
+
+First run: the app must have been granted the microphone once; until then the widget's Record button opens the app (`talaria://record`) to ask. Both targets share the App Group `group.com.sainaney.talaria`; if Xcode complains about the provisioning profile, tick App Groups in Signing & Capabilities for both targets once so it registers the group.
+
+Layout: `Shared/` (state, intents, Live Activity attributes; compiled into both targets), `TalariaWidget/` (widget, Live Activity, control), `talaria/Recording/` (recorder, background uploader). The widget target's Info.plist is `TalariaWidget-Info.plist` at the repo root.

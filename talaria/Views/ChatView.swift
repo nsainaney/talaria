@@ -242,6 +242,8 @@ struct ChatView: View {
                     if model.settings.voiceEnabled {
                         Divider()
                         Button { showMeeting = true } label: { Label("Record meeting", systemImage: "record.circle") }
+                        Button { Task { try? await BackgroundRecorder.shared.start() } } label: { Label("Record to Speakr", systemImage: "waveform.badge.mic") }
+                            .disabled(BackgroundRecorder.shared.state.isActive)
                     }
                 } label: {
                     Image(systemName: "plus").font(.body.weight(.medium))
