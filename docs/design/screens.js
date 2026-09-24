@@ -43,7 +43,7 @@ const chat = phone('Chat', `
 const rec = phone('Recording mode', `
   <div class="rec"><div class="bar">${I.list}${I.chev}</div>
     <div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div>
-    <div class="note">Complete sends the recording to Speakr for transcription. You can leave the app; it keeps recording.</div>
+    <div class="note"></div>
     <div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div>
   </div>`);
 
@@ -70,4 +70,4 @@ const lock = phone('Lock Screen', `
       <div class="widget"><div class="wh"><span class="live">${I.micf}</span> Recording<span class="t">12:34</span></div><div class="center"><div class="sm"><span class="round cancel">${I.x}</span><span class="round done">${I.check}</span></div><span class="round pause">${I.pause}</span></div></div>
     </div></div>`, 'locked');
 
-document.getElementById('screens').innerHTML = chat + rec + list + lock;
+const _t = document.getElementById('screens'); if (_t) _t.innerHTML = chat + rec + list + lock;

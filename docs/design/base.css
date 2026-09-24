@@ -52,7 +52,7 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .composer .field span { flex: 1; opacity: .5; }
 .pill { font-size: 12px; padding: 4px 10px; display: inline-flex; gap: 6px; align-items: center; }
 .pill .dot { width: 6px; height: 6px; border-radius: 3px; }
-.round { width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.round { width: 36px; height: 36px; border-radius: var(--round-r, 50%); display: inline-flex; align-items: center; justify-content: center; }
 .round .icon { width: 18px; height: 18px; }
 
 /* Recording mode */
@@ -64,7 +64,7 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .rec .note { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; opacity: .6; padding: 0 24px; }
 .rec .buttons { height: 50%; display: flex; flex-direction: column; }
 .rec .buttons .r { flex: 1; display: flex; align-items: center; justify-content: center; gap: 72px; }
-.big { width: 120px; height: 120px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.big { width: 120px; height: 120px; border-radius: var(--big-r, 50%); display: inline-flex; align-items: center; justify-content: center; color: #fff; }
 .big .icon { width: 48px; height: 48px; stroke-width: 2.4; }
 
 /* Recordings list */
@@ -89,7 +89,7 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .widget .wh .icon { width: 16px; height: 16px; }
 .widget .wh .t { margin-left: auto; font-weight: 500; font-variant-numeric: tabular-nums; font-size: 14px; }
 .widget .center { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; }
-.widget .mic { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; }
+.widget .mic { width: 64px; height: 64px; border-radius: var(--big-r, 50%); display: flex; align-items: center; justify-content: center; color: #fff; }
 .widget .mic .icon { width: 28px; height: 28px; }
 .widget .sm { display: flex; gap: 20px; } .widget .sm .round { width: 36px; height: 36px; }
 .la { width: 358px; border-radius: 22px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
