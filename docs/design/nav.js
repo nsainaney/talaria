@@ -72,8 +72,8 @@ const inboxExpanded = `
 const C = [
   phone('1 · Land: Inbox <small>· chats and recordings, newest first</small>', `${inbox}${fab}`),
   phone('2 · Filter <small>· All, Chats or Recordings</small>', `${inboxFiltered}${fab}`),
-  phone('3 · A chat <small>· pushed; back returns to the inbox</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}`),
-  phone('4 · Chat title menu <small>· skills, model, pin; tap the title itself to rename</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}${menu}`),
+  phone('3 · A chat <small>· waveform switches this chat to voice</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group"><span class="modebtn">${I.wave}</span></div></div>${chatBody}${composer()}`),
+  phone('4 · Chat title menu <small>· skills, model, pin; tap the title itself to rename</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group"><span class="modebtn">${I.wave}</span></div></div>${chatBody}${composer()}${menu}`),
   phone('5 · A recording <small>· expanded; resend asks first</small>', `${inboxExpanded}${fab}`),
   phone('6 · Recorder <small>· the mic button on the inbox</small>', `<div class="rec"><div class="bar"><span class="back">${I.chev} Inbox</span>${I.chev}</div><div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div><div class="note"></div><div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div></div>`),
 ];
@@ -81,11 +81,11 @@ const block = (n, title, why, frames) => `<h2 class="v">${n}${title ? " · " + t
 
 // Voice chat: a minimal screen. Your words appear as they are understood; Hermes's reply renders
 // with markdown; one big Pause (mic stops, Hermes waits) and a Stop that returns to the text chat.
-const vTop = (status, cls = '') => `<div class="nav"><span class="back">${I.chev} Home lab</span><div class="title"></div><span style="width:22px"></span></div>
+const vTop = (status, cls = '') => `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><span class="modebtn">${I.keyboard}</span></div>
   <div class="vstatus ${cls}"><span class="vdot"></span>${status}</div>`;
 const vButtons = (paused) => `<div class="vbuttons"><span class="big ${paused ? 'resume' : 'pause'}">${paused ? I.micf : I.pause}</span></div>`;
 const V = [
-  phone('1 · Listening <small>· what is understood, as you speak</small>', `${vTop('Listening', 'listen')}
+  phone('1 · Listening <small>· keyboard switches back to text</small>', `${vTop('Listening', 'listen')}
     <div class="vbody">
       <div class="vh">Hermes</div><div class="vtext">The backup ran at 02:00 and finished clean. Anything else on the server?</div>
       <div class="vh you">You</div><div class="vtext you">Yeah, how much space is left on the big drive and how does that compare to last<span class="caret"></span></div>
@@ -104,5 +104,5 @@ const V = [
     </div>${vButtons(true)}`),
 ];
 document.getElementById('study').innerHTML =
-  block('Modes', '', 'Three ways to use Talaria. <b>Chat</b>: the text composer, with the mic in it for dictating a message. <b>Voice chat</b>: the composer\'s mic held, or the waveform button in the chat title bar, opens the voice screen below; Back returns to the text chat with the exchange kept. <b>Meeting recording</b>: the mic on the inbox, the recorder screen, sent to Speakr. Chat and voice chat share a session; a recording is its own inbox row.', V) +
+  block('Modes', '', 'Three ways to use Talaria. <b>Chat</b>: the text composer, with the mic in it for dictating a message. <b>Voice chat</b>: the same session in a different mode. The waveform in a chat\'s title bar switches it to voice; the keyboard in the voice screen switches it back to text. Nothing is lost either way: it is one conversation, and the inbox row is the same row. Back leaves to the inbox. <b>Meeting recording</b>: the mic on the inbox, the recorder screen, sent to Speakr. Chat and voice chat share a session; a recording is its own inbox row.', V) +
   block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. The filter next to search narrows the list to chats or recordings. A chat pushes a page with a real back button; the chevron by the chat title opens a menu for skills, model and pin. A recording expands in place, like Voice Memos: scrubber, then send, skip back, play, skip forward and delete. Send is a cloud on a recording that has not gone to Speakr; on one that has, it becomes a resend arrow and asks before making a second copy. Titles are edited in place: tap the title of an expanded recording, or the title of a chat in its title bar, and type. The three buttons at the bottom start a text chat, a voice chat with Hermes, or a meeting recording.', C);

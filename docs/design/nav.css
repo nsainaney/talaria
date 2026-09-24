@@ -137,3 +137,6 @@
 .fab.three .b .icon { width: 20px; height: 20px; }
 .fab.three .b.voice { background: var(--glass); color: var(--accent); border: 1px solid var(--line); }
 .fab.three .b.mic { flex: 1; }
+
+.modebtn { width: 32px; height: 32px; border-radius: 10px; background: rgba(62,99,240,.10); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; }
+.modebtn .icon { width: 18px; height: 18px; }
