@@ -13,6 +13,7 @@ nonisolated enum RecorderStyle {
         static let cancel = Action(name: "Cancel", symbol: "xmark", color: .gray)
         static let complete = Action(name: "Complete", symbol: "checkmark", color: .green)
         static let close = Action(name: "Close", symbol: "xmark", color: .gray)
+        static let send = Action(name: "Send to Speakr", symbol: "icloud.and.arrow.up", color: .blue)
     }
 
     static func icon(_ phase: RecordingState.Phase, interrupted: Bool) -> String {

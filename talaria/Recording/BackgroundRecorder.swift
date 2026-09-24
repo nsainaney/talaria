@@ -201,18 +201,38 @@ final class BackgroundRecorder: RecordingCommands {
         }
     }
 
+    /// Stop without sending. The audio is kept: a stray tap on Cancel must never lose a recording.
     func cancel() async throws {
         guard let recorder, state.isActive else { throw Error.notRecording }
         resumeAttempts?.cancel()
+        let total = elapsed
         recorder.stop()
         self.recorder = nil
         runningSince = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
         fileURL = nil
-        log.info("cancelled")
-        set(RecordingState(micGranted: state.micGranted, speakrConfigured: speakr != nil))
-        endActivity(after: 0)
+        log.info("cancelled after \(Int(total))s; file kept")
+        finish(.failed, "Not sent. The audio is kept in Files › Talaria › Meetings; you can still send it from the app.", recorded: total)
+    }
+
+    /// Send the kept recording from the last stop or cancel.
+    func sendKeptRecording() {
+        guard state.phase == .failed, let name = state.fileName else { return }
+        let url = MeetingRecorder.recordingsDirectory().appendingPathComponent(name)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            update { $0.message = "The audio file is no longer on this phone." }
+            return
+        }
+        guard let client = speakr else {
+            update { $0.message = "Set the Speakr server in Settings first." }
+            return
+        }
+        do {
+            try SpeakrUploader.shared.enqueue(file: url, client: client)
+            update { $0.phase = .uploading; $0.message = "Sending to Speakr…" }
+        } catch {
+            update { $0.message = "Could not start the upload: \(error.localizedDescription)" }
+        }
     }
 
     /// Clear the outcome shown after a stop.

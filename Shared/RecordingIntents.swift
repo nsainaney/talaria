@@ -93,7 +93,7 @@ nonisolated struct StopRecordingIntent: LiveActivityIntent, AudioRecordingIntent
 
 nonisolated struct CancelRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Cancel recording"
-    static let description = IntentDescription("Discards the recording without sending it.")
+    static let description = IntentDescription("Stops the recording without sending it; the audio is kept on the phone.")
 
     func perform() async throws -> some IntentResult {
         try await RecordingIntentHost.run("cancel") { try await $0.cancel() }

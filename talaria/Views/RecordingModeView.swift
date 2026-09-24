@@ -47,8 +47,8 @@ struct RecordingModeView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .background(Color(.systemBackground))
-        .confirmationDialog("Discard this recording?", isPresented: $confirmCancel, titleVisibility: .visible) {
-            Button("Discard recording", role: .destructive) { Task { try? await rec.cancel() } }
+        .confirmationDialog("Stop without sending to Speakr? The audio stays in Files.", isPresented: $confirmCancel, titleVisibility: .visible) {
+            Button("Stop without sending") { Task { try? await rec.cancel() } }
         }
         .onChange(of: s.phase) { old, phase in
             if phase == .idle, old == .recording || old == .paused { dismiss() } // cancelled
@@ -94,6 +94,11 @@ struct RecordingModeView: View {
                         Link(destination: client.pageURL(id: id)) {
                             Label("Open in Speakr", systemImage: "arrow.up.right.square").font(.headline)
                         }
+                    } else if s.phase == .failed, s.fileName != nil {
+                        Button { rec.sendKeptRecording() } label: {
+                            Label("Send to Speakr", systemImage: "icloud.and.arrow.up").font(.headline)
+                        }
+                        .buttonStyle(.borderedProminent).controlSize(.large)
                     }
                 }
                 row(rowHeight) {

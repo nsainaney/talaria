@@ -39,6 +39,8 @@ struct RecordingBanner: View {
                 } else if s.phase != .uploading {
                     if let id = s.speakrRecordingId, let client = model.settings.speakr {
                         Link(destination: client.pageURL(id: id)) { Image(systemName: "arrow.up.right.square") }
+                    } else if s.phase == .failed, s.fileName != nil {
+                        Button { rec.sendKeptRecording() } label: { RoundActionLabel(action: .send, diameter: 28) }
                     }
                     Button { rec.clear() } label: { RoundActionLabel(action: .close, diameter: 28) }
                 }
