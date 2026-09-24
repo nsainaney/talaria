@@ -151,3 +151,8 @@
 .opts { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; font-size: 13px; color: #444; }
 .opts span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 8px; background: var(--page-bar, #fff); border: 1px solid rgba(127,127,127,.25); }
 .opts .icon { width: 18px; height: 18px; color: #3e63f0; }
+
+/* Inbox footer: three quiet glass buttons; the icon carries the meaning */
+.fab.three .b, .fab.three .b.mic, .fab.three .b.voice { background: var(--glass); color: var(--text); border: 1px solid var(--line); backdrop-filter: blur(20px); }
+.fab.three .b .icon { color: var(--accent); }
+.fab.three .b.mic .icon { color: var(--rec); }
