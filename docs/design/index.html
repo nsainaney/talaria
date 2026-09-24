@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Talaria design variants</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;background:#f3f3f5;color:#111}
+main{max-width:920px;margin:0 auto;padding:48px 24px}
+h1{font-size:28px;margin:0 0 6px} p.lead{color:#555;margin:0 0 32px}
+.v{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+a.card{display:block;text-decoration:none;color:inherit;border-radius:16px;padding:22px;background:#fff;border:1px solid rgba(0,0,0,.08)}
+a.card:hover{border-color:#111}
+a.card h2{margin:0 0 6px;font-size:18px} a.card p{margin:0;color:#555;font-size:14px;line-height:1.45}
+.sw{display:flex;gap:6px;margin-top:12px} .sw i{width:22px;height:22px;border-radius:6px;display:block;border:1px solid rgba(0,0,0,.1)}
+section{margin-top:40px;font-size:14px;color:#444;line-height:1.5} code{background:#e8e8ec;padding:2px 5px;border-radius:4px}
+</style></head><body><main>
+<h1>Talaria design variants</h1>
+<p class="lead">Four directions for the same four screens: chat, recording mode, recordings, and the Lock Screen widget with the Live Activity. Same content everywhere, only the styling changes.</p>
+<div class="v">
+  <a class="card" href="ink.html"><h2>1 · Ink</h2><p>Quiet and typographic. Near-monochrome, hairline dividers, one red accent reserved for recording. The chat reads like a document rather than a messenger.</p><div class="sw"><i style="background:#fff"></i><i style="background:#f4f4f2"></i><i style="background:#111"></i><i style="background:#e4352b"></i></div></a>
+  <a class="card" href="glass.html"><h2>2 · Glass</h2><p>Follows iOS 26: translucent layers over a soft tinted background, big radii, floating composer and controls. Familiar system feel with a warmer palette.</p><div class="sw"><i style="background:#eef1fb"></i><i style="background:#fff"></i><i style="background:#3e63f0"></i><i style="background:#ff453a"></i></div></a>
+  <a class="card" href="console.html"><h2>3 · Console</h2><p>Dark, dense, made for an agent. Amber accent, mono details for tools and commands, approval cards that look like a terminal prompt. The recorder glows.</p><div class="sw"><i style="background:#0f1115"></i><i style="background:#1a1d23"></i><i style="background:#f2b544"></i><i style="background:#ff5b4d"></i></div></a>
+  <a class="card" href="paper.html"><h2>4 · Paper</h2><p>Warm off-white, rounded cards with soft shadows, a green accent for "done" and a coral one for recording. Friendlier and less technical.</p><div class="sw"><i style="background:#f7f3ec"></i><i style="background:#fffdf9"></i><i style="background:#2f7d5b"></i><i style="background:#e5603f"></i></div></a>
+</div>
+<section>
+<p><b>Run:</b> <code>cd docs/design && npx http-server -o</code> (or open <code>index.html</code> directly; no build step, no dependencies).</p>
+<p><b>What to react to:</b> the overall feel first, then the composer and model pill, the approval card, the recorder buttons, and the recordings rows. Mixing is fine: "Glass, but Console's approval card" is a valid answer.</p>
+</section></main></body></html>

@@ -1,0 +1,38 @@
+:root { --page-bg:#ececea; --bg:#fbfbf9; --text:#151515; --muted:#7a7a76; --line:rgba(0,0,0,.09); --accent:#e4352b; --ink:#151515; }
+.phone { background: var(--bg); }
+.nav { border-bottom: 1px solid var(--line); }
+.nav .title { font-family: "New York", Georgia, serif; font-weight: 600; font-size: 18px; letter-spacing: -0.01em; }
+.msg.user .bubble { background: var(--ink); color: #fbfbf9; border-radius: 4px 18px 18px 18px; }
+.msg.assistant .bubble { padding: 4px 2px; }
+.msg.assistant .bubble p { font-size: 16px; line-height: 1.5; }
+.bubble pre { background: #f0f0ed; border-left: 2px solid var(--ink); border-radius: 0; }
+.bubble code { background: #f0f0ed; padding: 1px 4px; border-radius: 3px; }
+.tool { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.card.approval { border: 1px solid var(--ink); border-radius: 6px; background: #fff; }
+.card .cmd { background: #f0f0ed; border-radius: 3px; }
+.card .actions button { border-radius: 4px; background: #f0f0ed; color: var(--ink); }
+.card .actions .always { background: var(--ink); color: #fff; }
+.composer { border-top: 1px solid var(--line); }
+.composer .field { border: 1px solid var(--ink); border-radius: 999px; background: #fff; }
+.pill { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); } .pill .dot { background: var(--ink); }
+.round.plus, .round.micb { color: var(--ink); background: transparent; border: 1px solid var(--line); }
+.round.sendb { background: var(--ink); color: #fff; }
+.live { color: var(--accent); }
+.rec .timer { font-family: "New York", Georgia, serif; font-weight: 400; }
+.big { background: #f0f0ed; color: var(--ink); }
+.big.pause { background: var(--ink); color: #fff; }
+.big.done { background: var(--accent); color: #fff; }
+.big.cancel { background: transparent; border: 1.5px solid var(--line); color: var(--muted); }
+.list .rowi { border-bottom: 1px solid var(--line); }
+.round.play { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.rowi.playing .round.play { background: var(--ink); color: #fff; border-color: var(--ink); }
+.rowi .stat { color: var(--muted); } .rowi.sent .stat { color: var(--ink); } .rowi.err .st, .rowi.err .stat { color: var(--accent); } .rowi.live .stat { color: var(--accent); }
+.lnk { color: var(--muted); }
+.scrub .track { background: #e6e6e2; } .scrub .track i { background: var(--ink); }
+.done-btn { font-weight: 600; font-size: 16px; }
+.phone.locked { background: linear-gradient(#e9e9e4, #d9d9d3); }
+.la, .widget { background: rgba(255,255,255,.85); backdrop-filter: blur(20px); }
+.la .round, .widget .round { background: #f0f0ed; color: var(--ink); }
+.la .round.done, .widget .round.done { background: var(--accent); color: #fff; }
+.la .round.pause, .widget .round.pause { background: var(--ink); color: #fff; }
+.widget .mic { background: var(--accent); }

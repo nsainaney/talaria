@@ -1,0 +1,46 @@
+:root { --page-bg:#0b0c10; --page-bar:#14161b; --page-text:#e6e6e6; --bg:#0f1115; --text:#e8e9ec; --muted:#8a919e; --panel:#171a20; --line:rgba(255,255,255,.08); --accent:#f2b544; --rec:#ff5b4d; --ok:#4cd28a; }
+.topbar { border-bottom-color: rgba(255,255,255,.08); } .topbar p { color: #9aa0ab; } .topbar nav a { color: #ccc; background: rgba(255,255,255,.08); } .topbar nav a.on { background: var(--accent); color: #111; }
+.frame h2 { color: #9aa0ab; }
+.phone { background: var(--bg); border-color: #2a2d34; box-shadow: 0 30px 60px rgba(0,0,0,.6); }
+.nav { border-bottom: 1px solid var(--line); }
+.nav .title { font-family: var(--mono); font-size: 15px; font-weight: 500; color: var(--accent); }
+.msg.user .bubble { background: #242832; border: 1px solid var(--line); border-radius: 14px 14px 4px 14px; }
+.msg.assistant .bubble { padding: 2px 2px; }
+.msg .label { color: var(--muted); font-family: var(--mono); }
+.bubble pre { background: #0a0b0e; border: 1px solid var(--line); border-radius: 8px; color: #c9d1d9; }
+.bubble code { background: #1c2027; border-radius: 4px; padding: 1px 5px; color: var(--accent); }
+.tool { font-family: var(--mono); color: var(--muted); border: 1px dashed rgba(255,255,255,.18); border-radius: 6px; }
+.card.approval { background: #0a0b0e; border: 1px solid var(--accent); border-radius: 10px; font-family: var(--mono); font-size: 13px; }
+.card .h { color: var(--accent); }
+.card .cmd { background: #14161b; border-radius: 6px; color: #fff; }
+.card .cmd::before { content: "$ "; color: var(--accent); }
+.card .actions button { border-radius: 6px; background: #1c2027; color: #eee; font-family: var(--mono); font-weight: 500; }
+.card .actions .deny { color: var(--rec); } .card .actions .always { background: var(--accent); color: #111; }
+.composer { border-top: 1px solid var(--line); background: #0c0d11; }
+.composer .field { background: #171a20; border: 1px solid var(--line); border-radius: 12px; font-family: var(--mono); font-size: 14px; }
+.composer .field span::before { content: "> "; color: var(--accent); opacity: 1; }
+.pill { font-family: var(--mono); background: #171a20; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); } .pill .dot { background: var(--ok); }
+.round.plus, .round.micb { background: #171a20; border: 1px solid var(--line); color: #ddd; border-radius: 10px; }
+.round.micb { color: var(--rec); }
+.round.sendb { background: var(--accent); color: #111; border-radius: 10px; }
+.live { color: var(--rec); filter: drop-shadow(0 0 6px rgba(255,91,77,.8)); }
+.rec .timer { font-family: var(--mono); font-weight: 300; text-shadow: 0 0 30px rgba(255,91,77,.35); }
+.rec .state { font-family: var(--mono); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; font-size: 13px; color: var(--muted); }
+.big { background: #171a20; border: 1px solid var(--line); color: #eee; }
+.big.pause { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 40px rgba(242,181,68,.2); }
+.big.done { background: var(--ok); color: #071a10; border-color: transparent; box-shadow: 0 0 40px rgba(76,210,138,.3); }
+.big.cancel { color: var(--muted); }
+.list .rowi { border-bottom: 1px solid var(--line); }
+.list .rowi .d { font-family: var(--mono); font-size: 14px; }
+.round.play { background: #171a20; border: 1px solid var(--line); color: var(--accent); border-radius: 10px; }
+.rowi.playing .round.play { background: var(--accent); color: #111; }
+.rowi .stat { color: var(--muted); } .rowi.sent .stat { color: var(--ok); } .rowi.err .st, .rowi.err .stat { color: var(--rec); } .rowi.live .stat { color: var(--rec); }
+.lnk { color: var(--accent); }
+.scrub { font-family: var(--mono); } .scrub .track { background: #23272f; } .scrub .track i { background: var(--accent); }
+.done-btn { color: var(--accent); font-family: var(--mono); }
+.phone.locked { background: radial-gradient(80% 50% at 50% 0%, #26202a, #0f1115 70%); }
+.la, .widget { background: rgba(23,26,32,.85); border: 1px solid var(--line); backdrop-filter: blur(20px); }
+.la .round, .widget .round { background: #23272f; color: #eee; }
+.la .round.done, .widget .round.done { background: var(--ok); color: #071a10; } .la .round.pause, .widget .round.pause { background: var(--accent); color: #111; }
+.widget .mic { background: var(--rec); box-shadow: 0 0 30px rgba(255,91,77,.5); }
+.widget .wh { font-family: var(--mono); font-size: 13px; }
