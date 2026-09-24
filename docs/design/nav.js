@@ -53,14 +53,14 @@ const recDetail = `
     <div class="dh"><span class="ic rec big">${I.micf}</span><div><div class="d">Wed, Sep 24 · 9:02 AM</div><div class="s">48:12 · 41 MB</div></div></div>
     <div class="player"><span class="round play">${I.pause}</span><div class="scrub"><span>18:04</span><div class="track"><i></i></div><span>48:12</span></div></div>
     <div class="status ok">${I.checkc} Sent to Speakr as #3 · 2 hours ago</div>
-    <div class="acts"><span class="b">${I.link} Open in Speakr</span><span class="b">${I.cloud} Send again</span></div>
+    <div class="acts"><span class="b">${I.cloud} Send again</span></div>
     <div class="acts"><span class="b danger">${I.x} Delete</span></div>
   </div>`;
 const C = [
   phone('1 · Land: Inbox <small>· chats and recordings, newest first</small>', `<div class="nav"><span style="width:22px"></span><div class="title">Talaria</div><div class="group">${I.gear}</div></div>${inbox}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
   phone('2 · A chat <small>· pushed; back returns to the inbox</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}`),
   phone('3 · Chat title menu <small>· rename, skills, model, pin</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}${menu}`),
-  phone('4 · A recording <small>· pushed; play, send, open, delete</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Recording</div><span style="width:22px"></span></div>${recDetail}`),
+  phone('4 · A recording <small>· pushed; play, send, delete</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Recording</div><span style="width:22px"></span></div>${recDetail}`),
   phone('5 · Recorder <small>· the mic button on the inbox</small>', `<div class="rec"><div class="bar"><span class="back">${I.chev} Inbox</span>${I.chev}</div><div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div><div class="note"></div><div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div></div>`),
 ];
 const block = (n, title, why, frames) => `<h2 class="v">${n} · ${title}</h2><p class="why">${why}</p><div class="gallery">${frames.join('')}</div>`;
