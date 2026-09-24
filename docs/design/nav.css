@@ -96,6 +96,11 @@
 .vtext { font-size: 19px; line-height: 1.4; }
 .vtext p { margin: 0 0 8px; } .vtext p:last-child { margin: 0; }
 .vtext.you { color: var(--accent); }
+/* Live transcript: the words being understood, with an × to drop them (someone else talking). */
+.vlive { display: flex; align-items: flex-start; gap: 10px; }
+.vlive .vtext { flex: 1; }
+.vlive .vdrop { flex: none; width: 32px; height: 32px; background: var(--glass); backdrop-filter: blur(20px); border: 1px solid var(--line); color: var(--muted); }
+.vlive .vdrop .icon { width: 14px; height: 14px; }
 .caret { display: inline-block; width: 2px; height: 1em; background: var(--accent); vertical-align: -2px; margin-left: 2px; }
 .vt { border-collapse: collapse; width: 100%; font-size: 14px; margin: 6px 0 10px; }
 .vt th, .vt td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); } .vt th { font-weight: 600; color: var(--muted); font-size: 12px; }

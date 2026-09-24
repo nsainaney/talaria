@@ -93,6 +93,14 @@ final class VoiceController {
         if state == .listening || state == .thinking { state = chat.isRunning ? .thinking : .listening }
     }
 
+    /// Drop the words being understood right now so they are never sent. The mic keeps listening.
+    func discardUtterance() {
+        guard !transcript.isEmpty else { return }
+        silenceTask?.cancel()
+        transcript = ""
+        recognizer.nextUtterance()
+    }
+
     func stop() {
         isPaused = false
         restoreModel()

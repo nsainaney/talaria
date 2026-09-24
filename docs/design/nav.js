@@ -85,10 +85,10 @@ const vTop = (status, cls = '') => `<div class="nav"><span class="back">${I.chev
   <div class="vstatus ${cls}"><span class="vdot"></span>${status}</div>`;
 const vButtons = (paused) => `<div class="vmodel"><span class="pill model"><i class="dot"></i>glm-5.3 · medium</span></div><div class="vbuttons"><span class="big ${paused ? 'resume' : 'pause'}">${paused ? I.micf : I.pause}</span></div>`;
 const V = [
-  phone('1 · Listening <small>· the pen switches back to text</small>', `${vTop('Listening', 'listen')}
+  phone('1 · Listening <small>· the × drops what is being heard before it is sent</small>', `${vTop('Listening', 'listen')}
     <div class="vbody">
       <div class="vh">Hermes</div><div class="vtext">The backup ran at 02:00 and finished clean. Anything else on the server?</div>
-      <div class="vh you">You</div><div class="vtext you">Yeah, how much space is left on the big drive and how does that compare to last<span class="caret"></span></div>
+      <div class="vh you">You</div><div class="vlive"><div class="vtext you">Yeah, how much space is left on the big drive and how does that compare to last<span class="caret"></span></div><span class="round vdrop" title="Don't send this">${I.x}</span></div>
     </div>${vButtons(false)}`),
   phone('2 · Hermes speaking <small>· the reply, with markdown</small>', `${vTop('Hermes is speaking', 'speak')}
     <div class="vbody">

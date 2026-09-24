@@ -97,8 +97,19 @@ struct VoiceChatView: View {
                     }
                     if !v.transcript.isEmpty {
                         label("You", Theme.accent)
-                        (Text(v.transcript) + Text(" ▎").foregroundStyle(Theme.accent.opacity(0.7)))
-                            .font(.title3).foregroundStyle(Theme.accent)
+                        HStack(alignment: .top, spacing: 10) {
+                            (Text(v.transcript) + Text(" ▎").foregroundStyle(Theme.accent.opacity(0.7)))
+                                .font(.title3).foregroundStyle(Theme.accent)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            // Someone else was talking: drop these words before they are sent.
+                            Button { v.discardUtterance() } label: {
+                                Image(systemName: "xmark")
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                                    .frame(width: 32, height: 32).glass(16)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Don't send this")
+                        }
                     } else if items.isEmpty {
                         Text("Say something. Hermes answers out loud and here.")
                             .font(.title3).foregroundStyle(.secondary)
