@@ -1,8 +1,11 @@
 import AppIntents
+import Foundation
+import os
 
-/// What the recording intents drive. The app registers its recorder here; inside the widget
-/// extension nothing is registered, and these intents are never performed there anyway:
-/// audio recording intents run in the app's process, launching it in the background if needed.
+/// What the recording intents drive. The app registers its recorder here. The intents conform to
+/// `LiveActivityIntent`, which makes the system perform them in the app's process (launching it in
+/// the background if needed) rather than in the widget extension, where nothing is registered.
+/// `AudioRecordingIntent` marks them as recording intents; it requires a Live Activity while recording.
 @MainActor protocol RecordingCommands: AnyObject {
     func start() async throws
     func pause() throws
@@ -12,48 +15,62 @@ import AppIntents
 
 @MainActor enum RecordingIntentHost {
     static weak var commands: (any RecordingCommands)?
+    static let log = Logger(subsystem: "com.sainaney.talaria", category: "intents")
+
+    /// Run one command, logging which process performed it and why it failed, if it did.
+    static func run(_ name: String, _ body: @MainActor (any RecordingCommands) async throws -> Void) async throws {
+        guard let commands else {
+            log.error("\(name, privacy: .public) performed in \(Bundle.main.bundleIdentifier ?? "?", privacy: .public) with no recorder registered")
+            return
+        }
+        log.info("\(name, privacy: .public) performed in \(Bundle.main.bundleIdentifier ?? "?", privacy: .public)")
+        do { try await body(commands) } catch {
+            log.error("\(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
 }
 
-nonisolated struct StartRecordingIntent: AudioRecordingIntent {
+nonisolated struct StartRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Start recording"
     static let description = IntentDescription("Records audio; when stopped, the recording is sent to Speakr for transcription.")
 
     func perform() async throws -> some IntentResult {
-        try await RecordingIntentHost.commands?.start()
+        try await RecordingIntentHost.run("start") { try await $0.start() }
         return .result()
     }
 }
 
-nonisolated struct PauseRecordingIntent: AudioRecordingIntent {
+nonisolated struct PauseRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Pause recording"
 
     func perform() async throws -> some IntentResult {
-        try await RecordingIntentHost.commands?.pause()
+        try await RecordingIntentHost.run("pause") { try $0.pause() }
         return .result()
     }
 }
 
-nonisolated struct ResumeRecordingIntent: AudioRecordingIntent {
+nonisolated struct ResumeRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Resume recording"
 
     func perform() async throws -> some IntentResult {
-        try await RecordingIntentHost.commands?.resume()
+        try await RecordingIntentHost.run("resume") { try await $0.resume() }
         return .result()
     }
 }
 
-nonisolated struct StopRecordingIntent: AudioRecordingIntent {
+nonisolated struct StopRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Stop recording"
     static let description = IntentDescription("Stops the recording and sends it to Speakr.")
 
     func perform() async throws -> some IntentResult {
-        try await RecordingIntentHost.commands?.stop()
+        try await RecordingIntentHost.run("stop") { try await $0.stop() }
         return .result()
     }
 }
 
 /// Control Center toggle: on starts, off stops.
-nonisolated struct ToggleRecordingIntent: SetValueIntent, AudioRecordingIntent {
+nonisolated struct ToggleRecordingIntent: SetValueIntent, LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Record"
 
     @Parameter(title: "Recording")
@@ -61,9 +78,9 @@ nonisolated struct ToggleRecordingIntent: SetValueIntent, AudioRecordingIntent {
 
     func perform() async throws -> some IntentResult {
         if value {
-            try await RecordingIntentHost.commands?.start()
+            try await RecordingIntentHost.run("start") { try await $0.start() }
         } else {
-            try await RecordingIntentHost.commands?.stop()
+            try await RecordingIntentHost.run("stop") { try await $0.stop() }
         }
         return .result()
     }

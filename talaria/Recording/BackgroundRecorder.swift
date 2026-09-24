@@ -85,7 +85,25 @@ final class BackgroundRecorder: RecordingCommands {
     // MARK: Commands
 
     func start() async throws {
+        do {
+            try await beginRecording()
+        } catch {
+            log.error("start failed: \(error.localizedDescription, privacy: .public)")
+            let inBackground = UIApplication.shared.applicationState != .active
+            update {
+                $0.phase = .failed
+                $0.timerStart = nil
+                $0.message = inBackground
+                    ? "Could not start from here (\(error.localizedDescription)). Open Talaria and tap Record."
+                    : error.localizedDescription
+            }
+            throw error
+        }
+    }
+
+    private func beginRecording() async throws {
         guard !state.isActive, recorder == nil else { throw Error.alreadyRecording }
+        log.info("start requested; app state \(UIApplication.shared.applicationState.rawValue)")
         var granted = AVAudioApplication.shared.recordPermission == .granted
         if !granted, AVAudioApplication.shared.recordPermission == .undetermined {
             granted = await AVAudioApplication.requestRecordPermission()
@@ -293,6 +311,7 @@ final class BackgroundRecorder: RecordingCommands {
         do {
             activity = try Activity.request(attributes: RecordingActivityAttributes(startedAt: Date()),
                                             content: ActivityContent(state: first, staleDate: nil))
+            log.info("live activity started")
         } catch {
             log.error("live activity: \(error.localizedDescription, privacy: .public)")
         }
