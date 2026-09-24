@@ -12,7 +12,7 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .topbar p { margin: 0; font-size: 13px; color: #666; flex: 1; }
 .topbar nav a { font-size: 13px; margin-left: 12px; color: #444; text-decoration: none; padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.05); }
 .topbar nav a.on { background: #111; color: #fff; }
-.gallery { display: flex; gap: 32px; padding: 32px 24px 64px; overflow-x: auto; align-items: flex-start; }
+.gallery { display: flex; gap: 28px; padding: 28px 24px 48px; overflow-x: auto; align-items: flex-start; zoom: .8; }
 .frame { flex: 0 0 auto; }
 .frame h2 { font-size: 13px; font-weight: 600; color: #666; margin: 0 0 10px 6px; letter-spacing: .02em; text-transform: uppercase; }
 .phone { width: var(--phone-w); height: var(--phone-h); border-radius: var(--phone-r); border: 10px solid #1b1b1f; background: var(--bg); overflow: hidden; position: relative; box-shadow: 0 30px 60px rgba(0,0,0,.25); display: flex; flex-direction: column; color: var(--text); }
@@ -26,7 +26,7 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .nav { display: flex; align-items: center; gap: 14px; padding: 6px 16px 10px; }
 .nav .title { flex: 1; text-align: center; font-weight: 600; font-size: 17px; }
 .nav .group { display: flex; gap: 14px; }
-.messages { flex: 1; overflow: hidden; padding: 8px 14px; display: flex; flex-direction: column; gap: 12px; }
+.messages { flex: 1; min-height: 0; overflow: hidden; padding: 8px 14px; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; }
 .msg { max-width: 86%; font-size: 15.5px; line-height: 1.38; }
 .msg.user { align-self: flex-end; }
 .msg.assistant { align-self: flex-start; }
@@ -37,7 +37,8 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .bubble ul { margin: 4px 0 8px 18px; padding: 0; } .bubble li { margin: 2px 0; }
 .bubble code { font-family: var(--mono); font-size: 13px; }
 .bubble pre { font-family: var(--mono); font-size: 12.5px; margin: 6px 0 8px; padding: 10px 12px; overflow: hidden; white-space: pre; }
-.tool { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 5px 10px; margin: 2px 0 6px; }
+.tool { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; padding: 5px 10px; margin: 2px 0 6px; line-height: 1.6; }
+.tool code { white-space: nowrap; }
 .tool .icon { width: 14px; height: 14px; }
 .card { padding: 12px 14px; font-size: 14px; }
 .card .h { font-weight: 600; margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }

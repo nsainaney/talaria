@@ -26,7 +26,7 @@
 .list .rowi { border-bottom: 1px solid var(--line); }
 .round.play { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .rowi.playing .round.play { background: var(--ink); color: #fff; border-color: var(--ink); }
-.rowi .stat { color: var(--muted); } .rowi.sent .stat { color: var(--ink); } .rowi.err .st, .rowi.err .stat { color: var(--accent); } .rowi.live .stat { color: var(--accent); }
+.rowi .stat { color: var(--muted); } .rowi.k-sent .stat { color: var(--ink); } .rowi.k-err .st, .rowi.k-err .stat { color: var(--accent); } .rowi.k-live .stat { color: var(--accent); }
 .lnk { color: var(--muted); }
 .scrub .track { background: #e6e6e2; } .scrub .track i { background: var(--ink); }
 .done-btn { font-weight: 600; font-size: 16px; }

@@ -31,8 +31,7 @@ const chat = phone('Chat', `
     <div class="msg assistant"><div class="bubble">
       <div class="tool">${I.term} Ran <code>df -h</code> and <code>du -sh /mnt/space/*</code></div>
       <p>Two things, and one of them is mine.</p>
-      <ul><li><b>6.4 GB</b> in <code>services/hermes/pocket-tts</code>, the hand-placed TTS files from the benchmark.</li><li><b>443 MB</b> in <code>~/voice-bench</code>.</li></ul>
-      <pre>/mnt/space   1.8T  1.1T  700G  62%</pre>
+      <ul><li><b>6.4 GB</b> in <code>services/hermes/pocket-tts</code>, left over from the benchmark.</li><li><b>443 MB</b> in <code>~/voice-bench</code>.</li></ul>
       <p>Both are safe to delete now that the service is managed by nix. Want me to remove them?</p>
     </div></div>
     <div class="msg user"><div class="bubble">Yes, both.</div></div>
@@ -58,7 +57,7 @@ const rows = [
 const list = phone('Recordings', `
   <div class="nav"><span style="width:22px"></span><div class="title">Recordings</div><span class="done-btn">Done</span></div>
   <div class="list">${rows.map(([d, s, st, k, playing]) => `
-    <div class="rowi ${k}${playing ? ' playing' : ''}"><span class="round play">${playing ? I.pause : I.play}</span>
+    <div class="rowi k-${k}${playing ? ' playing' : ''}"><span class="round play">${playing ? I.pause : I.play}</span>
       <div class="meta"><div class="d">${d}</div><div class="s">${s}</div><div class="st">${st}</div>${playing ? `<div class="scrub"><span>18:04</span><div class="track"><i></i></div><span>48:12</span></div>` : ''}</div>
       <span class="stat">${k === 'sent' ? I.checkc : k === 'err' ? I.x : k === 'live' ? I.dot : I.dashed}</span>${k === 'sent' ? `<span class="lnk">${I.link}</span>` : k === 'none' || k === 'err' ? `<span class="lnk">${I.cloud}</span>` : ''}</div>`).join('')}
     <div class="foot">Recordings are deleted automatically after 30 days.</div></div>`);

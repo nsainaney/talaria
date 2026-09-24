@@ -34,7 +34,7 @@
 .list .rowi .d { font-family: var(--mono); font-size: 14px; }
 .round.play { background: #171a20; border: 1px solid var(--line); color: var(--accent); border-radius: 10px; }
 .rowi.playing .round.play { background: var(--accent); color: #111; }
-.rowi .stat { color: var(--muted); } .rowi.sent .stat { color: var(--ok); } .rowi.err .st, .rowi.err .stat { color: var(--rec); } .rowi.live .stat { color: var(--rec); }
+.rowi .stat { color: var(--muted); } .rowi.k-sent .stat { color: var(--ok); } .rowi.k-err .st, .rowi.k-err .stat { color: var(--rec); } .rowi.k-live .stat { color: var(--rec); }
 .lnk { color: var(--accent); }
 .scrub { font-family: var(--mono); } .scrub .track { background: #23272f; } .scrub .track i { background: var(--accent); }
 .done-btn { color: var(--accent); font-family: var(--mono); }

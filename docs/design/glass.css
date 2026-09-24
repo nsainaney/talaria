@@ -23,7 +23,7 @@
 .big.cancel { background: var(--glass); color: var(--muted); backdrop-filter: blur(20px); }
 .list .rowi { background: var(--glass); border-radius: 18px; margin-bottom: 8px; padding: 12px; box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 4px 14px rgba(30,40,80,.06); }
 .round.play { background: var(--accent); color: #fff; }
-.rowi .stat { color: var(--muted); } .rowi.sent .stat { color: #28a745; } .rowi.err .st, .rowi.err .stat { color: var(--rec); } .rowi.live .stat { color: var(--rec); }
+.rowi .stat { color: var(--muted); } .rowi.k-sent .stat { color: #28a745; } .rowi.k-err .st, .rowi.k-err .stat { color: var(--rec); } .rowi.k-live .stat { color: var(--rec); }
 .lnk { color: var(--accent); }
 .scrub .track { background: rgba(20,30,60,.1); } .scrub .track i { background: var(--accent); }
 .done-btn { color: var(--accent); font-weight: 600; font-size: 16px; }

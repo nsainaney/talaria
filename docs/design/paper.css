@@ -22,7 +22,7 @@
 .list .rowi { background: var(--card); border-radius: 18px; margin-bottom: 8px; padding: 12px; box-shadow: 0 2px 10px rgba(60,40,20,.07); }
 .round.play { background: var(--rec); color: #fff; }
 .rowi.playing .round.play { background: var(--text); }
-.rowi .stat { color: var(--muted); } .rowi.sent .stat { color: var(--accent); } .rowi.err .st, .rowi.err .stat { color: var(--rec); } .rowi.live .stat { color: var(--rec); }
+.rowi .stat { color: var(--muted); } .rowi.k-sent .stat { color: var(--accent); } .rowi.k-err .st, .rowi.k-err .stat { color: var(--rec); } .rowi.k-live .stat { color: var(--rec); }
 .lnk { color: var(--accent); }
 .scrub .track { background: #ece5d9; } .scrub .track i { background: var(--rec); }
 .done-btn { color: var(--accent); font-weight: 700; font-size: 16px; }
