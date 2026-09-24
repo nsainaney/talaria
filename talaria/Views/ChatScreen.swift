@@ -17,7 +17,9 @@ struct ChatScreen: View {
     private var current: HermesSession? { model.chat.session ?? session }
 
     var body: some View {
-        ChatView()
+        Group {
+            if model.voice.isActive { VoiceChatView() } else { ChatView() }
+        }
             .background(GlassBackground())
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)

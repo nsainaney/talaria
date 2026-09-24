@@ -23,7 +23,6 @@ struct ChatView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 4)
             }
             if draft.hasPrefix("/") { slashPopup }
-            if model.voice.isActive { VoiceBar().padding(.bottom, 6) }
             composer
         }
         .onChange(of: model.chat.session?.id) { _, _ in draft = ""; attachments = [] }

@@ -16,6 +16,8 @@ final class VoiceController {
     private(set) var micLevel: Float = 0
     var error: String?
     var isActive: Bool { state != .idle }
+    /// The microphone is ignored and nothing is sent; Hermes waits. Its current reply still finishes.
+    private(set) var isPaused = false
 
     private let recognizer = SpeechRecognizer()
     private let speaker = HermesSpeaker()
@@ -75,7 +77,24 @@ final class VoiceController {
         promptForPendingRequest()
     }
 
+    func pause() {
+        guard isActive, !isPaused else { return }
+        isPaused = true
+        silenceTask?.cancel()
+        transcript = ""
+        recognizer.nextUtterance()
+    }
+
+    func resume() {
+        guard isPaused else { return }
+        isPaused = false
+        transcript = ""
+        recognizer.nextUtterance()
+        if state == .listening || state == .thinking { state = chat.isRunning ? .thinking : .listening }
+    }
+
     func stop() {
+        isPaused = false
         restoreModel()
         silenceTask?.cancel()
         workingCueTask?.cancel()
@@ -90,6 +109,7 @@ final class VoiceController {
     // MARK: Listening
 
     private func heard(_ text: String) {
+        guard !isPaused else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != transcript else { return }
         if speaker.isSpeaking, !speaker.isPreparing, !settings.voiceBargeIn {
