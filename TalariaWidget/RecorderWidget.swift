@@ -52,8 +52,8 @@ struct RecorderWidgetView: View {
     private var home: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "waveform.badge.mic").foregroundStyle(.red)
-                Text("Talaria Recorder").font(.subheadline.weight(.semibold))
+                Image(systemName: "mic.fill").foregroundStyle(.red)
+                Text("Talaria").font(.headline)
                 Spacer(minLength: 0)
             }
             Spacer(minLength: 0)
@@ -106,7 +106,7 @@ struct RecorderWidgetView: View {
     private var rectangular: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(state.isActive ? RecorderGlyphs.title(state) : "Talaria Recorder").font(.headline).lineLimit(1)
+                Text(state.isActive ? RecorderGlyphs.title(state) : "Talaria").font(.headline).lineLimit(1)
                 if state.isActive || state.phase == .uploading {
                     timer.font(.body.monospacedDigit())
                 } else if let note = RecorderGlyphs.note(state) {
