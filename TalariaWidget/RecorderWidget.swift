@@ -5,6 +5,7 @@ import WidgetKit
 nonisolated struct RecorderEntry: TimelineEntry {
     let date: Date
     let state: RecordingState
+    var voice = VoiceChatState()
 }
 
 nonisolated struct RecorderProvider: TimelineProvider {
@@ -13,24 +14,26 @@ nonisolated struct RecorderProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (RecorderEntry) -> Void) {
-        completion(RecorderEntry(date: .now, state: context.isPreview ? RecordingState(micGranted: true) : RecordingState.load()))
+        completion(context.isPreview ? RecorderEntry(date: .now, state: RecordingState(micGranted: true))
+                                     : RecorderEntry(date: .now, state: RecordingState.load(), voice: VoiceChatState.load()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<RecorderEntry>) -> Void) {
         // The app reloads this timeline whenever the recorder's state changes.
-        completion(Timeline(entries: [RecorderEntry(date: .now, state: RecordingState.load())], policy: .never))
+        completion(Timeline(entries: [RecorderEntry(date: .now, state: RecordingState.load(), voice: VoiceChatState.load())], policy: .never))
     }
 }
 
-/// Home Screen and Lock Screen widget: start a recording, pause, resume, complete or cancel it.
+/// Home Screen and Lock Screen widget: start a voice chat with Hermes or a recording; while
+/// recording, pause, resume, complete or cancel it.
 struct RecorderWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: RecordingShared.widgetKind, provider: RecorderProvider()) { entry in
-            RecorderWidgetView(state: entry.state)
+            RecorderWidgetView(state: entry.state, voice: entry.voice)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("Recorder")
-        .description("Record audio and send it to Speakr for transcription when you finish.")
+        .configurationDisplayName("Talaria")
+        .description("Start a voice chat with Hermes, or record audio that goes to Speakr for transcription.")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
     }
 }
@@ -38,6 +41,10 @@ struct RecorderWidget: Widget {
 struct RecorderWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let state: RecordingState
+    var voice = VoiceChatState()
+
+    /// A voice chat is mirrored only while no recording runs; the recorder owns the microphone.
+    private var voiceShowing: Bool { voice.isActive && !state.isActive && state.phase != .uploading }
 
     var body: some View {
         switch family {
@@ -47,9 +54,35 @@ struct RecorderWidgetView: View {
         }
     }
 
+    // MARK: Voice chat: status and timer, then Pause/Resume and End.
+
+    private var voiceHome: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: VoiceChatStyle.icon(voice.phase)).foregroundStyle(VoiceChatStyle.color(voice.phase))
+                Text(VoiceChatStyle.title(voice.phase)).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+                if let start = voice.startedAt {
+                    Text(start, style: .timer).font(.subheadline.weight(.medium).monospacedDigit())
+                }
+            }
+            Spacer(minLength: 0)
+            VoiceChatButtons(phase: voice.phase, diameter: 44)
+            if let t = voice.title {
+                Text(t).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     // MARK: Home Screen: title, then the mic, or the timer with Cancel/Complete and Pause/Resume.
 
-    private var home: some View {
+    @ViewBuilder private var home: some View {
+        if voiceShowing { voiceHome } else { recorderHome }
+    }
+
+    private var recorderHome: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: RecorderStyle.icon(state.phase, interrupted: state.interrupted))
@@ -68,9 +101,7 @@ struct RecorderWidgetView: View {
             case .uploading:
                 Label("Sending to Speakr…", systemImage: "icloud.and.arrow.up").font(.footnote).foregroundStyle(.secondary)
             case .idle, .sent, .failed, .startFailed:
-                Link(destination: RecordingShared.recordURL) {
-                    RoundActionLabel(action: .record, diameter: family == .systemSmall ? 64 : 72)
-                }
+                StartButtons(diameter: family == .systemSmall ? 52 : 64, captions: note == nil)
                 if let note {
                     Text(note).font(.caption2).foregroundStyle(state.phase == .sent ? Color.secondary : Color.red)
                         .multilineTextAlignment(.center).lineLimit(2)
@@ -103,7 +134,13 @@ struct RecorderWidgetView: View {
     private var circular: some View {
         ZStack {
             AccessoryWidgetBackground()
-            if state.isActive {
+            if voiceShowing {
+                if voice.phase == .paused {
+                    Button(intent: ResumeVoiceChatIntent()) { Image(systemName: RecorderStyle.Action.resume.symbol).font(.title2) }
+                } else {
+                    Button(intent: PauseVoiceChatIntent()) { Image(systemName: RecorderStyle.Action.pause.symbol).font(.title2) }
+                }
+            } else if state.isActive {
                 Button(intent: StopRecordingIntent()) { Image(systemName: RecorderStyle.Action.complete.symbol).font(.title2) }
             } else if state.phase == .uploading {
                 Image(systemName: "icloud.and.arrow.up").font(.title2)
@@ -114,7 +151,22 @@ struct RecorderWidgetView: View {
         .buttonStyle(.plain)
     }
 
-    private var rectangular: some View {
+    @ViewBuilder private var rectangular: some View {
+        if voiceShowing { voiceRectangular } else { recorderRectangular }
+    }
+
+    private var voiceRectangular: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(voice.title ?? "Voice chat").font(.headline).lineLimit(1)
+                Text(VoiceChatStyle.title(voice.phase)).font(.caption).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            VoiceChatButtons(phase: voice.phase, diameter: 30)
+        }
+    }
+
+    private var recorderRectangular: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(state.isActive ? RecorderStyle.title(state.phase, interrupted: state.interrupted) : "Talaria")
@@ -129,7 +181,29 @@ struct RecorderWidgetView: View {
             if state.isActive {
                 RecorderButtons(state: state, diameter: 30, singleRow: true)
             } else if state.phase != .uploading {
-                Link(destination: RecordingShared.recordURL) { RoundActionLabel(action: .record, diameter: 30) }
+                StartButtons(diameter: 30, captions: false)
+            }
+        }
+    }
+}
+
+/// Nothing running: Voice chat and Record, side by side, opening the app into either.
+struct StartButtons: View {
+    let diameter: CGFloat
+    var captions = true
+
+    var body: some View {
+        HStack(spacing: diameter * 0.45) {
+            Link(destination: RecordingShared.voiceChatURL) { button(.voiceChat) }
+            Link(destination: RecordingShared.recordURL) { button(.record) }
+        }
+    }
+
+    private func button(_ action: RecorderStyle.Action) -> some View {
+        VStack(spacing: 4) {
+            RoundActionLabel(action: action, diameter: diameter)
+            if captions {
+                Text(action.name).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
         }
     }

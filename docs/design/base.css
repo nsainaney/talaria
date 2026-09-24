@@ -80,10 +80,12 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .scrub .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; border-radius: 2px; }
 
 /* Lock screen with widget + live activity */
-.lock { flex: 1; display: flex; flex-direction: column; align-items: center; padding-top: 30px; gap: 26px; }
+.lock { flex: 1; display: flex; flex-direction: column; align-items: center; padding-top: 22px; gap: 16px; }
+.lock .widgets { width: 358px; justify-content: space-between; row-gap: 14px; }
+.la.voice .t { font-size: 15px; }
 .lock .time { font-size: 86px; font-weight: 300; letter-spacing: -0.03em; line-height: 1; }
 .lock .date { font-size: 20px; margin-top: -14px; opacity: .8; }
-.widgets { display: flex; gap: 16px; }
+.widgets { display: flex; flex-wrap: wrap; gap: 16px; }
 .widget { width: 158px; height: 158px; border-radius: 22px; padding: 14px; display: flex; flex-direction: column; }
 .widget .wh { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; }
 .widget .wh .icon { width: 16px; height: 16px; }
@@ -92,6 +94,10 @@ body { font-family: var(--font); background: var(--page-bg, #e9e9ee); color: var
 .widget .mic { width: 64px; height: 64px; border-radius: var(--big-r, 50%); display: flex; align-items: center; justify-content: center; color: #fff; }
 .widget .mic .icon { width: 28px; height: 28px; }
 .widget .sm { display: flex; gap: 20px; } .widget .sm .round { width: 36px; height: 36px; }
+.widget .two { display: flex; gap: 22px; } .widget .two .mic { width: 52px; height: 52px; } .widget .two .mic .icon { width: 22px; height: 22px; }
+.widget .caps { display: flex; gap: 22px; } .widget .caps small { width: 52px; text-align: center; font-size: 10px; opacity: .75; }
+.widget .center > small { font-size: 10px; opacity: .75; }
+.widget .wh .speak .icon { color: #3e63f0; }
 .la { width: 358px; border-radius: 22px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
 .la .meta { flex: 1; } .la .h { font-weight: 600; font-size: 16px; } .la .t { font-size: 18px; font-variant-numeric: tabular-nums; opacity: .7; }
 .la .acts { display: flex; gap: 10px; } .la .acts .round { width: 40px; height: 40px; }

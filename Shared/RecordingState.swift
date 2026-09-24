@@ -9,6 +9,8 @@ nonisolated enum RecordingShared {
     static let stateKey = "recording.state"
     /// Opens the app and starts a recording, for when the widget cannot start one itself.
     static let recordURL = URL(string: "talaria://record")!
+    /// Opens the app into a new voice chat with Hermes.
+    static let voiceChatURL = URL(string: "talaria://voice-chat")!
 
     static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 }

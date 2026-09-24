@@ -39,10 +39,35 @@ struct RootView: View {
             if model.settings.isConfigured { await model.connect() } else { showSettings = true }
         }
         .onOpenURL { url in
-            // talaria://record from the widget: start recording and show the recorder.
-            guard url.scheme == "talaria", url.host() == "record" else { return }
-            model.showRecorder = true
-            if !recorder.state.isActive { Task { try? await recorder.start() } }
+            guard url.scheme == "talaria" else { return }
+            switch url.host() {
+            case "record":
+                // From the widget: start recording and show the recorder.
+                model.showRecorder = true
+                if !recorder.state.isActive { Task { try? await recorder.start() } }
+            case "voice-chat":
+                // From the widget: a new voice chat. A running recording has the microphone, so
+                // it wins and the recorder is shown instead.
+                if recorder.state.isActive { model.showRecorder = true; return }
+                model.showRecorder = false
+                openNewChat(voice: true)
+            default:
+                break
+            }
+        }
+    }
+
+    /// Push a fresh chat from the inbox, leaving any open chat first. The pop is given a moment to
+    /// finish so the old screen's disappearance does not stop the voice the new one starts.
+    private func openNewChat(voice: Bool) {
+        if path.isEmpty {
+            path.append(InboxDestination.newChat(voice: voice))
+        } else {
+            path = NavigationPath()
+            Task {
+                try? await Task.sleep(for: .milliseconds(400))
+                path.append(InboxDestination.newChat(voice: voice))
+            }
         }
     }
 

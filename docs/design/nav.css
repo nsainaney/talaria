@@ -109,6 +109,9 @@
 .vbuttons .big { width: 104px; height: 104px; }
 .vbuttons .big.pause { background: linear-gradient(#ffb340, #ff9500); }
 .vbuttons .big.resume { background: var(--rec); }
+.vbuttons { position: relative; }
+.vbuttons .big.shush { position: absolute; right: 48px; width: 60px; height: 60px; background: var(--accent); }
+.vbuttons .big.shush .icon { width: 26px; height: 26px; }
 .vbuttons .big.stop { width: 72px; height: 72px; background: var(--glass); color: var(--muted); border: 1px solid var(--line); border-radius: 20px; }
 .vbuttons .big.stop .icon { width: 30px; height: 30px; }
 

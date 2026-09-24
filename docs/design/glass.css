@@ -32,4 +32,4 @@
 .la, .widget { background: rgba(255,255,255,.22); backdrop-filter: blur(30px);  color: #fff; }
 .la .round, .widget .round { background: rgba(255,255,255,.3); color: #fff; }
 .la .round.done, .widget .round.done { background: #34c759; } .la .round.pause, .widget .round.pause { background: #ff9f0a; }
-.widget .mic { background: var(--rec);  }
+.widget .mic { background: var(--rec);  } .widget .mic.voice, .widget .round.shush { background: var(--accent); }

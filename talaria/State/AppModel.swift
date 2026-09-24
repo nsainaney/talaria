@@ -22,6 +22,7 @@ final class AppModel {
         voice = VoiceController(chat: chat, skills: skills, settings: settings)
         chat.client = gateway
         BackgroundRecorder.shared.willStart = { [weak self] in self?.voice.stop() }
+        VoiceChatIntentHost.commands = voice
         gateway.onEvent = { [weak self] e in self?.handle(event: e) }
         gateway.onServerRequest = { [weak self] r in self?.chat.handle(serverRequest: r) ?? false }
         gateway.onResync = { [weak self] sid in Task { await self?.chat.resync(liveId: sid) } }

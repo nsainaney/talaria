@@ -24,6 +24,7 @@ const I = {
   back15: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/><text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">15</text></svg>',
   fwd15: '<svg class="icon" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/><text x="12" y="15" font-size="7.5" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">15</text></svg>',
   trash: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  shush: '<svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/></svg>',
   more: '<svg class="icon fill" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   resend: '<svg class="icon" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/><path d="M9.5 12.5L12 15l4-4"/></svg>',
   wave: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>',
@@ -76,9 +77,11 @@ const list = phone('Recordings', `
 const lock = phone('Lock Screen', `
   <div class="lock"><div class="time">9:41</div><div class="date">Wednesday, September 24</div>
     <div class="la"><span class="live">${I.micf}</span><div class="meta"><div class="h">Recording</div><div class="t">12:34</div></div><div class="acts"><span class="round cancel">${I.x}</span><span class="round pause">${I.pause}</span><span class="round done">${I.check}</span></div></div>
+    <div class="la voice"><span class="speak">${I.wave}</span><div class="meta"><div class="h">Home lab</div><div class="t">Hermes is speaking</div></div><div class="acts"><span class="round pause">${I.pause}</span><span class="round shush">${I.shush}</span><span class="round cancel">${I.x}</span></div></div>
     <div class="widgets">
-      <div class="widget"><div class="wh">${I.micf} Talaria</div><div class="center"><span class="mic">${I.micf}</span></div></div>
+      <div class="widget"><div class="wh">${I.micf} Talaria</div><div class="center"><div class="two"><span class="mic voice">${I.wave}</span><span class="mic">${I.micf}</span></div><div class="caps"><small>Voice chat</small><small>Record</small></div></div></div>
       <div class="widget"><div class="wh"><span class="live">${I.micf}</span> Recording<span class="t">12:34</span></div><div class="center"><div class="sm"><span class="round cancel">${I.x}</span><span class="round done">${I.check}</span></div><span class="round pause">${I.pause}</span></div></div>
+      <div class="widget"><div class="wh"><span class="speak">${I.wave}</span> Speaking<span class="t">03:12</span></div><div class="center"><div class="sm"><span class="round pause">${I.pause}</span><span class="round shush">${I.shush}</span><span class="round cancel">${I.x}</span></div><small>Home lab</small></div></div>
     </div></div>`, 'locked');
 
 // Rendering is done by frozen.js (variant pages) or nav.js (navigation page).

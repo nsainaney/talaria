@@ -1,14 +1,16 @@
+import ActivityKit
 import Foundation
 import Observation
+import os
 
 /// Hands-free conversation with Hermes: listen, send, speak the reply, listen again. Talking over
 /// a reply stops it. Permission and clarify requests are read aloud and can be answered by voice.
 @Observable @MainActor
-final class VoiceController {
+final class VoiceController: VoiceChatCommands {
     enum State: Equatable { case idle, listening, thinking, speaking }
     enum Answering: Equatable { case none, approval, clarify }
 
-    private(set) var state: State = .idle
+    private(set) var state: State = .idle { didSet { if state != oldValue { publish() } } }
     private(set) var answering: Answering = .none
     /// Live text of the utterance being spoken by the person.
     private(set) var transcript = ""
@@ -17,9 +19,13 @@ final class VoiceController {
     var error: String?
     var isActive: Bool { state != .idle }
     /// The microphone is ignored and nothing is sent; Hermes waits. Its current reply still finishes.
-    private(set) var isPaused = false
+    private(set) var isPaused = false { didSet { if isPaused != oldValue { publish() } } }
+    var isVoiceChatActive: Bool { isActive }
 
     private let recognizer = SpeechRecognizer()
+    @ObservationIgnored private var activity: Activity<VoiceChatActivityAttributes>?
+    @ObservationIgnored private var startedAt: Date?
+    private static let log = Logger(subsystem: "com.sainaney.talaria", category: "voice")
     private let speaker = HermesSpeaker()
     private var splitter = SpeechSentenceSplitter()
     private var silenceTask: Task<Void, Never>?
@@ -73,6 +79,8 @@ final class VoiceController {
         speaker.resetSession()
         transcript = ""
         muteReply = false
+        startedAt = Date()
+        startActivity()
         state = chat.isRunning ? .thinking : .listening
         promptForPendingRequest()
     }
@@ -101,6 +109,21 @@ final class VoiceController {
         recognizer.nextUtterance()
     }
 
+    /// Cut off what Hermes is saying right now. The rest of that reply stays silent; the mic and
+    /// the chat go on, and Hermes is told next turn that it was cut off.
+    func shush() {
+        guard state == .speaking else { return }
+        interruptReply()
+        finishedSpeaking()
+    }
+
+    private func interruptReply() {
+        speaker.stop()
+        splitter = SpeechSentenceSplitter()
+        muteReply = true
+        interruptedLastReply = true
+    }
+
     func stop() {
         isPaused = false
         restoreModel()
@@ -112,6 +135,53 @@ final class VoiceController {
         transcript = ""
         answering = .none
         state = .idle
+        startedAt = nil
+        endActivity()
+    }
+
+    // MARK: Widget and Live Activity
+
+    /// What the widget and the Live Activity show.
+    private var shared: VoiceChatState {
+        let phase: VoiceChatState.Phase
+        if state == .idle { phase = .off }
+        else if isPaused { phase = .paused }
+        else {
+            switch state {
+            case .listening: phase = .listening
+            case .thinking: phase = .thinking
+            case .speaking: phase = .speaking
+            case .idle: phase = .off
+            }
+        }
+        return VoiceChatState(phase: phase, startedAt: startedAt, title: chat.session?.title)
+    }
+
+    private func publish() {
+        let s = shared
+        s.save()
+        if let activity {
+            Task { await activity.update(ActivityContent(state: .init(phase: s.phase, title: s.title), staleDate: nil)) }
+        }
+    }
+
+    private func startActivity() {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        for old in Activity<VoiceChatActivityAttributes>.activities {
+            Task { await old.end(nil, dismissalPolicy: .immediate) }
+        }
+        do {
+            activity = try Activity.request(attributes: VoiceChatActivityAttributes(startedAt: startedAt ?? Date()),
+                                            content: ActivityContent(state: .init(phase: .listening, title: chat.session?.title), staleDate: nil))
+        } catch {
+            Self.log.error("live activity: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func endActivity() {
+        guard let activity else { return }
+        self.activity = nil
+        Task { await activity.end(nil, dismissalPolicy: .immediate) }
     }
 
     // MARK: Listening
@@ -127,10 +197,7 @@ final class VoiceController {
         transcript = trimmed
         if state == .speaking, !speaker.isPreparing, Self.wordCount(trimmed) >= 2 {
             // Barge-in: stop talking at once and drop the rest of this reply.
-            speaker.stop()
-            splitter = SpeechSentenceSplitter()
-            muteReply = true
-            interruptedLastReply = true
+            interruptReply()
             state = .listening
         }
         silenceTask?.cancel()
@@ -154,10 +221,7 @@ final class VoiceController {
         guard !text.isEmpty, !isEcho(text) else { return }
         if speaker.isSpeaking {
             // Anything said while Hermes talks ends the reply, even a single word.
-            speaker.stop()
-            splitter = SpeechSentenceSplitter()
-            muteReply = true
-            interruptedLastReply = true
+            interruptReply()
             finishedSpeaking()
             if Self.isStopWord(text) { return }
         }

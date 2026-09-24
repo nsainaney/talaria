@@ -6,6 +6,7 @@ struct TalariaWidgetBundle: WidgetBundle {
     var body: some Widget {
         RecorderWidget()
         RecordingLiveActivity()
+        VoiceChatLiveActivity()
         RecordControl()
     }
 }

@@ -14,6 +14,10 @@ nonisolated enum RecorderStyle {
         static let complete = Action(name: "Complete", symbol: "checkmark", color: .green)
         static let close = Action(name: "Close", symbol: "xmark", color: .gray)
         static let send = Action(name: "Send to Speakr", symbol: "icloud.and.arrow.up", color: .blue)
+        static let voiceChat = Action(name: "Voice chat", symbol: "waveform", color: .blue)
+        static let end = Action(name: "End", symbol: "xmark", color: .gray)
+        /// Cut off what Hermes is saying right now; the chat goes on.
+        static let shush = Action(name: "Quiet", symbol: "speaker.slash.fill", color: .blue)
     }
 
     static func icon(_ phase: RecordingState.Phase, interrupted: Bool) -> String {

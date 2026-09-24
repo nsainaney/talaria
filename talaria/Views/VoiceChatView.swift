@@ -14,10 +14,19 @@ struct VoiceChatView: View {
             status(voice)
             exchange(voice)
                 .opacity(voice.isPaused ? 0.55 : 1)
-            Button {
-                if voice.isPaused { voice.resume() } else { voice.pause() }
-            } label: {
-                RoundActionLabel(action: voice.isPaused ? .resume : .pause, diameter: 104)
+            ZStack {
+                Button {
+                    if voice.isPaused { voice.resume() } else { voice.pause() }
+                } label: {
+                    RoundActionLabel(action: voice.isPaused ? .resume : .pause, diameter: 104)
+                }
+                if voice.state == .speaking, !voice.isPaused {
+                    // Cut Hermes off mid-sentence; the chat goes on.
+                    Button { voice.shush() } label: { RoundActionLabel(action: .shush, diameter: 60) }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, 48)
+                        .transition(.scale.combined(with: .opacity))
+                }
             }
             .buttonStyle(.plain)
             .padding(.top, 14).padding(.bottom, 28)
