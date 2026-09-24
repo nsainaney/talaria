@@ -8,6 +8,7 @@ struct RecordingModeView: View {
     @Environment(\.dismiss) private var dismiss
     private let rec = BackgroundRecorder.shared
     @State private var confirmCancel = false
+    @State private var showRecordings = false
 
     var body: some View {
         let s = rec.state
@@ -15,7 +16,7 @@ struct RecordingModeView: View {
             let h = geo.size.height
             VStack(spacing: 0) {
                 // Top third: status and the timer.
-                ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .top) {
                     VStack(spacing: 10) {
                         Spacer(minLength: 0)
                         HStack(spacing: 8) {
@@ -29,10 +30,17 @@ struct RecordingModeView: View {
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity)
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.down").font(.title3).padding(12)
+                    HStack {
+                        Button { showRecordings = true } label: {
+                            Image(systemName: "list.bullet").font(.title3).padding(12)
+                        }
+                        .accessibilityLabel("Recordings")
+                        Spacer()
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.down").font(.title3).padding(12)
+                        }
+                        .accessibilityLabel("Hide")
                     }
-                    .accessibilityLabel("Hide")
                 }
                 .frame(height: h / 3)
                 // Middle: a line of context.
@@ -47,6 +55,7 @@ struct RecordingModeView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .background(Color(.systemBackground))
+        .sheet(isPresented: $showRecordings) { RecordingsView().environment(model) }
         .confirmationDialog("Stop without sending to Speakr? The audio stays in Files.", isPresented: $confirmCancel, titleVisibility: .visible) {
             Button("Stop without sending") { Task { try? await rec.cancel() } }
         }

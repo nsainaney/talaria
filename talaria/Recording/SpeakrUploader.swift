@@ -37,7 +37,7 @@ final class SpeakrUploader: NSObject, URLSessionDataDelegate {
         let name = parts.first ?? ""
         if parts.count == 2 { try? FileManager.default.removeItem(atPath: parts[1]) }
         Task { @MainActor in
-            BackgroundRecorder.shared.uploadFinished(name: name, status: status, body: body, error: error)
+            RecordingLibrary.shared.uploadFinished(name: name, status: status, body: body, error: error)
         }
     }
 

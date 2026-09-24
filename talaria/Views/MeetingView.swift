@@ -138,6 +138,7 @@ struct MeetingView: View {
         defer { uploading = false }
         do {
             uploaded = try await client.upload(file: file)
+            if let uploaded { RecordingLibrary.shared.markSent(name: file.lastPathComponent, id: uploaded.id) }
         } catch {
             uploadError = error.localizedDescription
         }

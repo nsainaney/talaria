@@ -12,6 +12,7 @@ struct ChatView: View {
     @State private var showFiles = false
     @State private var showCamera = false
     @State private var showMeeting = false
+    @State private var showRecordings = false
     @State private var showModelPicker = false
     @FocusState private var composerFocused: Bool
 
@@ -59,6 +60,7 @@ struct ChatView: View {
             CameraPicker { attachments.append(.image($0)) }.ignoresSafeArea()
         }
         .sheet(isPresented: $showMeeting) { MeetingView() }
+        .sheet(isPresented: $showRecordings) { RecordingsView() }
         .sheet(isPresented: $showModelPicker) { ModelPickerView() }
         .onReceive(NotificationCenter.default.publisher(for: .invokeSkill)) { note in
             guard let name = note.object as? String else { return }
@@ -244,6 +246,7 @@ struct ChatView: View {
                         Button { showMeeting = true } label: { Label("Record meeting", systemImage: "record.circle") }
                         Button { Task { try? await BackgroundRecorder.shared.start() } } label: { Label("Record to Speakr", systemImage: "waveform.badge.mic") }
                             .disabled(BackgroundRecorder.shared.state.isActive)
+                        Button { showRecordings = true } label: { Label("Recordings", systemImage: "list.bullet") }
                     }
                 } label: {
                     Image(systemName: "plus").font(.body.weight(.medium))

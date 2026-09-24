@@ -196,6 +196,8 @@ final class BackgroundRecorder: RecordingCommands {
                 $0.phase = .uploading; $0.recorded = total; $0.timerStart = nil; $0.interrupted = false
                 $0.message = "Sending to Speakr…"
             }
+            RecordingLibrary.shared.noteSending(fileURL.lastPathComponent)
+            RecordingLibrary.shared.refresh()
         } catch {
             finish(.failed, "Could not start the upload: \(error.localizedDescription)", recorded: total)
         }
@@ -218,21 +220,14 @@ final class BackgroundRecorder: RecordingCommands {
     /// Send the kept recording from the last stop or cancel.
     func sendKeptRecording() {
         guard state.phase == .failed, let name = state.fileName else { return }
-        let url = MeetingRecorder.recordingsDirectory().appendingPathComponent(name)
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        guard let client = speakr else { update { $0.message = "Set the Speakr server in Settings first." }; return }
+        RecordingLibrary.shared.refresh()
+        guard let item = RecordingLibrary.shared.items.first(where: { $0.name == name }) else {
             update { $0.message = "The audio file is no longer on this phone." }
             return
         }
-        guard let client = speakr else {
-            update { $0.message = "Set the Speakr server in Settings first." }
-            return
-        }
-        do {
-            try SpeakrUploader.shared.enqueue(file: url, client: client)
-            update { $0.phase = .uploading; $0.message = "Sending to Speakr…" }
-        } catch {
-            update { $0.message = "Could not start the upload: \(error.localizedDescription)" }
-        }
+        RecordingLibrary.shared.send(item, client: client)
+        update { $0.phase = .uploading; $0.message = "Sending to Speakr…" }
     }
 
     /// Clear the outcome shown after a stop.
@@ -243,6 +238,7 @@ final class BackgroundRecorder: RecordingCommands {
 
     /// Called by the uploader when Speakr answers, possibly after the app was relaunched for it.
     func uploadFinished(name: String, status: Int?, body: Data, error: (any Swift.Error)?) {
+        guard state.phase == .uploading, state.fileName == name else { return }
         if let error {
             finish(.failed, "Upload failed: \(error.localizedDescription). The audio is in Files › Talaria › Meetings.")
             return
