@@ -140,3 +140,10 @@
 
 .modebtn { width: 32px; height: 32px; border-radius: 10px; background: rgba(62,99,240,.10); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; }
 .modebtn .icon { width: 18px; height: 18px; }
+
+.iconbtn.sm { width: 32px; height: 32px; border-radius: 10px; }
+.iconbtn.sm.on { background: var(--accent); color: #fff; border-color: transparent; }
+.nav .group { gap: 8px; }
+.menu:not(.filtermenu) { left: auto; right: 54px; transform: none; top: 62px; width: 230px; }
+.vmodel { display: flex; justify-content: center; padding-top: 6px; }
+.vbuttons { padding-top: 12px; }
