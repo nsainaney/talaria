@@ -81,4 +81,4 @@ const lock = phone('Lock Screen', `
       <div class="widget"><div class="wh"><span class="live">${I.micf}</span> Recording<span class="t">12:34</span></div><div class="center"><div class="sm"><span class="round cancel">${I.x}</span><span class="round done">${I.check}</span></div><span class="round pause">${I.pause}</span></div></div>
     </div></div>`, 'locked');
 
-const _t = document.getElementById('screens'); if (_t) _t.innerHTML = chat + rec + list + lock;
+// Rendering is done by frozen.js (variant pages) or nav.js (navigation page).

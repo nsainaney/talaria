@@ -1,0 +1,39 @@
+:root { --big-r: 28px; --round-r: 11px; --page-bg:#101216; --page-bar:#171a20; --page-text:#e8e9ec; --page-muted:#9aa0ab; --bg:#15181e; --text:#eceef2; --muted:#8e95a3; --surface:#1e222a; --glass:rgba(34,38,48,.85); --field:rgba(255,255,255,.07); --line:rgba(255,255,255,.09); --accent:#7c8cff; --accent-soft:rgba(124,140,255,.16); --rec:#ff6b5c; --rec-soft:rgba(255,107,92,.16); --ok:#48d597; --dim:rgba(0,0,0,.5); }
+.topbar { border-bottom-color: rgba(255,255,255,.08); } .topbar p { color: var(--page-muted); } .topbar nav a { color: #ccc; background: rgba(255,255,255,.08); } .topbar nav a.on { background: var(--accent); color: #0b0d12; }
+.frame h2 { color: var(--page-muted); }
+.phone { background: var(--bg); border-color: #2a2e38; }
+.nav { margin: 4px 12px 8px; padding: 8px 12px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(24px); border: 1px solid var(--line); }
+.msg.user .bubble { background: var(--accent); color: #0b0d12; border-radius: 14px 14px 4px 14px; }
+.msg.assistant { max-width: 100%; } .msg.assistant .bubble { padding: 2px 4px; }
+.bubble pre, .bubble code { background: var(--field); border-radius: 8px; }
+.tool { background: var(--accent-soft); color: var(--accent); border-radius: 8px; }
+.card.approval { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.card .cmd { background: var(--field); border-radius: 10px; }
+.card .actions button { border-radius: 10px; background: var(--field); color: var(--text); }
+.card .actions .deny { color: var(--rec); } .card .actions .always { background: var(--accent); color: #0b0d12; }
+.composer .field { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.pill { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; color: var(--text); } .pill .dot { background: var(--ok); }
+.round.plus { background: var(--surface); border: 1px solid var(--line); color: var(--text); }
+.round.sendb { background: var(--accent); color: #0b0d12; }
+.live { color: var(--rec); }
+.rec .timer { font-weight: 200; }
+.big.pause { background: #f0a24b; color: #1a1206; } .big.resume { background: var(--rec); } .big.done { background: var(--ok); color: #06231a; } .big.cancel { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+.done-btn { color: var(--accent); font-weight: 600; font-size: 16px; }
+.phone.locked { background: radial-gradient(90% 55% at 50% 0%, #2a2f5a, #15181e 70%); color: #fff; }
+.la, .widget { background: rgba(30,34,42,.8); backdrop-filter: blur(24px); border: 1px solid var(--line); border-radius: 16px; }
+.la .round, .widget .round { background: var(--field); color: #fff; }
+.la .round.done, .widget .round.done { background: var(--ok); color: #06231a; } .la .round.pause, .widget .round.pause { background: #f0a24b; color: #1a1206; }
+.widget .mic { background: var(--rec); border-radius: 18px; }
+.fab .b { background: var(--accent); color: #0b0d12; } .fab .b.voice { background: var(--surface); color: var(--accent); border: 1px solid var(--line); } .fab .b.mic { background: var(--rec); color: #fff; }
+.round.play { background: var(--accent); color: #0b0d12; }
+.iconbtn { background: var(--surface); } .iconbtn.sm.on { background: var(--accent); color: #0b0d12; }
+.filter { background: var(--surface); }
+.menu { background: var(--surface); }
+.sess .s { background: var(--surface); }
+.sess .s.on { background: var(--accent-soft); }
+.sess .s.expanded { background: var(--surface); }
+.scrub2 .track i { background: var(--accent); }
+.vbuttons .big.pause { background: #f0a24b; }
+.vt th, .vt td { border-bottom-color: var(--line); }
+.ctl .c.del { color: var(--rec); }
+.rowi .stat, .rowi.k-sent .stat { color: var(--ok); }
