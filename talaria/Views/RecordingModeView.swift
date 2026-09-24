@@ -29,12 +29,10 @@ struct RecordingModeView: View {
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity)
-                    if s.isActive {
-                        Button { dismiss() } label: {
-                            Image(systemName: "chevron.down").font(.title3).padding(12)
-                        }
-                        .accessibilityLabel("Hide")
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.down").font(.title3).padding(12)
                     }
+                    .accessibilityLabel("Hide")
                 }
                 .frame(height: h / 3)
                 // Middle: a line of context.
@@ -52,8 +50,8 @@ struct RecordingModeView: View {
         .confirmationDialog("Discard this recording?", isPresented: $confirmCancel, titleVisibility: .visible) {
             Button("Discard recording", role: .destructive) { Task { try? await rec.cancel() } }
         }
-        .onChange(of: s.phase) { _, phase in
-            if phase == .idle { dismiss() }
+        .onChange(of: s.phase) { old, phase in
+            if phase == .idle, old == .recording || old == .paused { dismiss() } // cancelled
         }
     }
 
@@ -66,46 +64,61 @@ struct RecordingModeView: View {
     }
 
     @ViewBuilder private func controls(_ s: RecordingState, rowHeight: CGFloat) -> some View {
-        VStack(spacing: 12) {
+        let d = min(rowHeight * 0.72, 124)
+        VStack(spacing: 0) {
             switch s.phase {
             case .recording, .paused:
-                if s.phase == .paused {
-                    bigButton("Resume", "record.fill", .red) { Task { try? await rec.resume() } }
-                } else {
-                    bigButton("Pause", "pause.fill", .orange) { try? rec.pause() }
+                row(rowHeight) {
+                    if s.phase == .paused {
+                        round("Resume", "record.fill", .red, d) { Task { try? await rec.resume() } }
+                    } else {
+                        round("Pause", "pause.fill", .orange, d) { try? rec.pause() }
+                    }
                 }
-                HStack(spacing: 12) {
-                    bigButton("Cancel", "xmark", .gray) { confirmCancel = true }
-                    bigButton("Complete", "checkmark", .green) { Task { try? await rec.stop() } }
+                row(rowHeight) {
+                    HStack(spacing: d * 0.6) {
+                        round("Cancel", "xmark", .gray, d) { confirmCancel = true }
+                        round("Complete", "checkmark", .green, d) { Task { try? await rec.stop() } }
+                    }
                 }
             case .uploading:
                 ProgressView().controlSize(.large).frame(maxHeight: .infinity)
-            case .sent, .failed, .startFailed, .idle:
-                if let id = s.speakrRecordingId, let client = model.settings.speakr {
-                    Link(destination: client.pageURL(id: id)) {
-                        Label("Open in Speakr", systemImage: "arrow.up.right.square")
-                            .font(.title2.weight(.semibold))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    .buttonStyle(.bordered)
+            case .idle, .startFailed:
+                row(rowHeight) {
+                    round("Record", "mic.fill", .red, d) { Task { try? await rec.start() } }
                 }
-                bigButton("Close", "xmark", .gray) { rec.clear(); dismiss() }
+                row(rowHeight) { EmptyView() }
+            case .sent, .failed:
+                row(rowHeight) {
+                    if let id = s.speakrRecordingId, let client = model.settings.speakr {
+                        Link(destination: client.pageURL(id: id)) {
+                            Label("Open in Speakr", systemImage: "arrow.up.right.square").font(.headline)
+                        }
+                    }
+                }
+                row(rowHeight) {
+                    round("Close", "xmark", .gray, d) { rec.clear(); dismiss() }
+                }
             }
         }
     }
 
-    /// A button that fills its row: easy to hit without looking.
-    private func bigButton(_ text: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
+    private func row<V: View>(_ height: CGFloat, @ViewBuilder _ content: () -> V) -> some View {
+        content().frame(maxWidth: .infinity).frame(height: height)
+    }
+
+    /// A round icon button, big enough to hit without looking.
+    private func round(_ name: String, _ symbol: String, _ tint: Color, _ diameter: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: symbol).font(.system(size: 34, weight: .semibold))
-                Text(text).font(.title3.weight(.semibold))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Image(systemName: symbol)
+                .font(.system(size: diameter * 0.36, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: diameter, height: diameter)
+                .background(Circle().fill(tint.gradient))
+                .contentShape(Circle())
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.roundedRectangle(radius: 22))
-        .tint(tint)
+        .buttonStyle(.plain)
+        .accessibilityLabel(name)
     }
 
     private func icon(_ s: RecordingState) -> String {
@@ -137,7 +150,7 @@ struct RecordingModeView: View {
         case .sent: return "Sent to Speakr"
         case .failed: return "Not sent"
         case .startFailed: return "Could not start"
-        case .idle: return "Recorder"
+        case .idle: return "Ready to record"
         }
     }
 
@@ -148,6 +161,7 @@ struct RecordingModeView: View {
             return s.speakrConfigured ? "Complete sends the recording to Speakr for transcription. You can leave the app; it keeps recording."
                                       : "Saved on this phone. Set the Speakr server in Settings to have recordings transcribed."
         case .uploading: return "You can leave the app; the upload finishes in the background."
+        case .idle: return "Tap the mic to start. Complete sends the recording to Speakr."
         default: return s.message ?? ""
         }
     }

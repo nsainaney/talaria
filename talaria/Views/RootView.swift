@@ -20,6 +20,10 @@ struct RootView: View {
                         }
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { showRecording = true } label: {
+                            Image(systemName: recorder.state.isActive ? "record.circle.fill" : "mic.badge.plus")
+                                .foregroundStyle(recorder.state.isActive ? .red : .accentColor)
+                        }
                         Button { showSkills = true } label: { Image(systemName: "sparkles") }
                         Button { model.chat.startNewChat() } label: { Image(systemName: "square.and.pencil") }
                         Button { showSettings = true } label: { Image(systemName: "gearshape") }
