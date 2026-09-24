@@ -16,9 +16,26 @@ import os
     func cancel() async throws
 }
 
+/// Thrown by the recorder when iOS refuses to start the microphone in the background; the intent
+/// then brings the app forward and starts there.
+nonisolated enum RecordingStartError: Error {
+    case needsForeground(String)
+}
+
 @MainActor enum RecordingIntentHost {
     static weak var commands: (any RecordingCommands)?
     static let log = Logger(subsystem: "com.sainaney.talaria", category: "intents")
+
+    /// Start in the background; if iOS refuses the microphone there, open the app and start again.
+    static func startOrContinueInForeground(_ intent: some AppIntent) async throws {
+        do {
+            try await run("start") { try await $0.start() }
+        } catch RecordingStartError.needsForeground(let why) {
+            log.info("background start refused (\(why, privacy: .public)); continuing in the foreground")
+            try await intent.continueInForeground("Talaria opens to start recording.", alwaysConfirm: false)
+            try await run("start (foreground)") { try await $0.start() }
+        }
+    }
 
     /// Run one command, logging which process performed it and why it failed, if it did.
     static func run(_ name: String, _ body: @MainActor (any RecordingCommands) async throws -> Void) async throws {
@@ -37,9 +54,11 @@ import os
 nonisolated struct StartRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Start recording"
     static let description = IntentDescription("Records audio; when stopped, the recording is sent to Speakr for transcription.")
+    /// Background first; the app is opened only if iOS refuses to start the microphone there.
+    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
 
     func perform() async throws -> some IntentResult {
-        try await RecordingIntentHost.run("start") { try await $0.start() }
+        try await RecordingIntentHost.startOrContinueInForeground(self)
         return .result()
     }
 }
@@ -85,13 +104,14 @@ nonisolated struct CancelRecordingIntent: LiveActivityIntent, AudioRecordingInte
 /// Control Center toggle: on starts, off stops. Performed in the app process in the background.
 nonisolated struct ToggleRecordingIntent: SetValueIntent, LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Record"
+    static let supportedModes: IntentModes = [.background, .foreground(.dynamic)]
 
     @Parameter(title: "Recording")
     var value: Bool
 
     func perform() async throws -> some IntentResult {
         if value {
-            try await RecordingIntentHost.run("start") { try await $0.start() }
+            try await RecordingIntentHost.startOrContinueInForeground(self)
         } else {
             try await RecordingIntentHost.run("stop") { try await $0.stop() }
         }

@@ -94,6 +94,10 @@ final class BackgroundRecorder: RecordingCommands {
     func start() async throws {
         do {
             try await beginRecording()
+        } catch Error.audioSession(let e) where UIApplication.shared.applicationState != .active {
+            // iOS will not start the microphone for a backgrounded app; the intent opens the app and retries.
+            log.error("background start refused: \(e.localizedDescription, privacy: .public) [\(e.code)]")
+            throw RecordingStartError.needsForeground(Error.audioSession(e).localizedDescription)
         } catch {
             log.error("start failed: \(error.localizedDescription, privacy: .public) [\((error as NSError).domain, privacy: .public) \((error as NSError).code)] app state \(UIApplication.shared.applicationState.rawValue) activities \(Activity<RecordingActivityAttributes>.activities.count)")
             update { $0.phase = .startFailed; $0.timerStart = nil; $0.message = error.localizedDescription }
