@@ -47,26 +47,44 @@ struct RecorderWidgetView: View {
         }
     }
 
-    // MARK: Home Screen
+    // MARK: Home Screen: title, then one big Record button, or the timer with Pause/Resume and Stop.
 
     private var home: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: RecorderGlyphs.icon(state)).foregroundStyle(RecorderGlyphs.color(state))
-                Text(RecorderGlyphs.title(state)).font(.headline).lineLimit(1).minimumScaleFactor(0.8)
-            }
-            if state.phase == .recording, let start = state.timerStart, !state.interrupted {
-                Text(start, style: .timer).font(.title2.weight(.medium).monospacedDigit()).foregroundStyle(.primary)
-            } else if state.isActive || state.phase == .uploading {
-                Text(RecordingState.stamp(state.recorded)).font(.title2.weight(.medium).monospacedDigit()).foregroundStyle(.secondary)
-            } else {
-                Text(RecorderGlyphs.subtitle(state)).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(family == .systemSmall ? 2 : 3)
+                Image(systemName: "waveform.badge.mic").foregroundStyle(.red)
+                Text("Talaria Recorder").font(.subheadline.weight(.semibold))
+                Spacer(minLength: 0)
             }
             Spacer(minLength: 0)
-            RecorderButtons(state: state, compact: family == .systemSmall)
+            switch state.phase {
+            case .recording, .paused:
+                HStack(spacing: 6) {
+                    Image(systemName: RecorderGlyphs.icon(state)).foregroundStyle(RecorderGlyphs.color(state))
+                        .font(.caption)
+                    timer.font(.title2.weight(.medium).monospacedDigit())
+                }
+                RecorderButtons(state: state, compact: family == .systemSmall)
+            case .uploading:
+                Label("Sending to Speakr…", systemImage: "icloud.and.arrow.up").font(.footnote).foregroundStyle(.secondary)
+            case .idle, .sent, .failed, .startFailed:
+                RecordButton(size: family == .systemSmall ? 64 : 72)
+                if let note = RecorderGlyphs.note(state) {
+                    Text(note).font(.caption2).foregroundStyle(state.phase == .sent ? Color.secondary : Color.red)
+                        .multilineTextAlignment(.center).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder private var timer: some View {
+        if state.phase == .recording, let start = state.timerStart, !state.interrupted {
+            Text(start, style: .timer)
+        } else {
+            Text(RecordingState.stamp(state.recorded))
+        }
     }
 
     // MARK: Lock Screen
@@ -75,15 +93,11 @@ struct RecorderWidgetView: View {
         ZStack {
             AccessoryWidgetBackground()
             if state.isActive {
-                Button(intent: StopRecordingIntent()) {
-                    Image(systemName: "stop.fill").font(.title2)
-                }
+                Button(intent: StopRecordingIntent()) { Image(systemName: "stop.fill").font(.title2) }
             } else if state.phase == .uploading {
                 Image(systemName: "icloud.and.arrow.up").font(.title2)
             } else {
-                Link(destination: RecordingShared.recordURL) {
-                    Image(systemName: "record.circle").font(.title2)
-                }
+                Button(intent: StartRecordingIntent()) { Image(systemName: "record.circle").font(.title2) }
             }
         }
         .buttonStyle(.plain)
@@ -92,13 +106,11 @@ struct RecorderWidgetView: View {
     private var rectangular: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(RecorderGlyphs.title(state)).font(.headline).lineLimit(1)
-                if state.phase == .recording, let start = state.timerStart, !state.interrupted {
-                    Text(start, style: .timer).font(.body.monospacedDigit())
-                } else if state.isActive || state.phase == .uploading {
-                    Text(RecordingState.stamp(state.recorded)).font(.body.monospacedDigit())
-                } else {
-                    Text(RecorderGlyphs.subtitle(state)).font(.caption2).lineLimit(2)
+                Text(state.isActive ? RecorderGlyphs.title(state) : "Talaria Recorder").font(.headline).lineLimit(1)
+                if state.isActive || state.phase == .uploading {
+                    timer.font(.body.monospacedDigit())
+                } else if let note = RecorderGlyphs.note(state) {
+                    Text(note).font(.caption2).lineLimit(2)
                 }
             }
             Spacer(minLength: 0)
@@ -107,7 +119,24 @@ struct RecorderWidgetView: View {
     }
 }
 
-/// The action buttons for the current phase.
+/// The big red Record button.
+struct RecordButton: View {
+    let size: CGFloat
+
+    var body: some View {
+        Button(intent: StartRecordingIntent()) {
+            ZStack {
+                Circle().strokeBorder(.secondary.opacity(0.5), lineWidth: 3)
+                Circle().fill(.red).padding(6)
+            }
+            .frame(width: size, height: size)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Record")
+    }
+}
+
+/// Pause/Resume and Stop while a recording runs; Record otherwise.
 struct RecorderButtons: View {
     let state: RecordingState
     let compact: Bool
@@ -124,8 +153,7 @@ struct RecorderButtons: View {
             case .uploading:
                 EmptyView()
             case .idle, .sent, .failed, .startFailed:
-                // iOS refuses to begin recording in the background, so Record opens the app and starts there.
-                Link(destination: RecordingShared.recordURL) { label("Record", "record.circle") }.tint(.red)
+                Button(intent: StartRecordingIntent()) { label("Record", "record.circle") }.tint(.red)
             }
         }
         .buttonStyle(.bordered)
@@ -180,13 +208,12 @@ enum RecorderGlyphs {
         }
     }
 
-    static func subtitle(_ s: RecordingState) -> String {
+    /// A line under the Record button after a stop or a failure; nothing when idle.
+    static func note(_ s: RecordingState) -> String? {
         switch s.phase {
-        case .recording: return s.interrupted ? "Resumes when the call ends" : ""
-        case .sent: return s.speakrRecordingId.map { "Recording #\($0) is being transcribed." } ?? "Being transcribed."
-        case .failed, .startFailed: return s.message ?? "The audio is saved on this phone."
-        case .idle: return "Tap to record. Stop sends it to Speakr."
-        default: return ""
+        case .sent: return s.speakrRecordingId.map { "Sent to Speakr as #\($0)" } ?? "Sent to Speakr"
+        case .failed, .startFailed: return s.message
+        default: return nil
         }
     }
 }

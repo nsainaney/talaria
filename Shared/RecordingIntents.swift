@@ -70,16 +70,18 @@ nonisolated struct StopRecordingIntent: LiveActivityIntent, AudioRecordingIntent
     }
 }
 
-/// Control Center button. iOS does not let an app begin recording while it is in the background,
-/// so this opens the app and starts there; a running recording is stopped instead.
-nonisolated struct RecordControlIntent: AppIntent {
+/// Control Center toggle: on starts, off stops. Performed in the app process in the background.
+nonisolated struct ToggleRecordingIntent: SetValueIntent, LiveActivityIntent, AudioRecordingIntent {
     static let title: LocalizedStringResource = "Record"
-    static let description = IntentDescription("Opens Talaria and starts a recording, or stops the one running.")
-    static let openAppWhenRun = true
+
+    @Parameter(title: "Recording")
+    var value: Bool
 
     func perform() async throws -> some IntentResult {
-        try await RecordingIntentHost.run("control") { commands in
-            if commands.isRecordingActive { try await commands.stop() } else { try await commands.start() }
+        if value {
+            try await RecordingIntentHost.run("start") { try await $0.start() }
+        } else {
+            try await RecordingIntentHost.run("stop") { try await $0.stop() }
         }
         return .result()
     }
