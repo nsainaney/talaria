@@ -8,7 +8,6 @@ struct RecordingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RecordingActivityAttributes.self) { context in
             LockScreenRecordingView(state: context.state)
-                .padding(.horizontal, 16).padding(.vertical, 12)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -38,13 +37,43 @@ struct RecordingLiveActivity: Widget {
                     .foregroundStyle(RecorderStyle.color(context.state.phase, interrupted: context.state.interrupted))
             }
         }
+        // Apple Watch Smart Stack gets its own layout instead of the Dynamic Island's compact views.
+        .supplementalActivityFamilies([.small])
     }
 }
 
 struct LockScreenRecordingView: View {
+    @Environment(\.activityFamily) private var family
     let state: RecordingActivityAttributes.ContentState
 
     var body: some View {
+        if family == .small {
+            watch
+        } else {
+            phone.padding(.horizontal, 16).padding(.vertical, 12)
+        }
+    }
+
+    /// Apple Watch Smart Stack: title and timer on one line, the round buttons under it.
+    private var watch: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: RecorderStyle.icon(state.phase, interrupted: state.interrupted))
+                    .foregroundStyle(RecorderStyle.color(state.phase, interrupted: state.interrupted))
+                Text(RecorderStyle.title(state.phase, interrupted: state.interrupted)).font(.headline).lineLimit(1)
+                Spacer(minLength: 0)
+                ActivityTimer(state: state).font(.headline.monospacedDigit())
+            }
+            if state.phase.isActive {
+                ActivityButtons(state: state, diameter: 34).frame(maxWidth: .infinity)
+            } else if let m = state.message {
+                Text(m).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
+        }
+        .padding(8)
+    }
+
+    private var phone: some View {
         HStack(spacing: 12) {
             Image(systemName: RecorderStyle.icon(state.phase, interrupted: state.interrupted))
                 .font(.title2)
