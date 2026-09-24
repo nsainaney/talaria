@@ -1,6 +1,7 @@
 /* Navigation study, Glass v2 (tight corners, no shadows). Loaded after base.css and glass.css. */
 .study { padding: 8px 24px 40px; }
 .study h2.v { font-size: 20px; margin: 28px 0 4px; }
+.study h2.v:empty { display: none; }
 .study p.why { margin: 0 0 6px; color: #555; font-size: 14px; max-width: 900px; line-height: 1.45; }
 .study .gallery { padding-top: 12px; }
 .frame h2 { text-transform: none; letter-spacing: 0; font-size: 13px; }

@@ -21,11 +21,6 @@ const composer = (cls = '') => `<div class="composer ${cls}"><div class="row"><s
   <div class="row"><span class="round plus">${I.plus}</span><div class="field"><span>Message Hermes</span></div><span class="round micb">${I.micf}</span><span class="round sendb">${I.send}</span></div></div>`;
 const tabbar = (on) => `<div class="tabbar">${[['Chat', I.sparkles], ['Recorder', I.micf], ['Skills', I.list], ['Settings', I.gear]].map(([n, i]) => `<div class="tab ${n === on ? 'on' : ''}">${i}${n}</div>`).join('')}</div>`;
 
-const B = [
-  phone('Land: the chat <small>· title is a menu</small>', `<div class="nav">${I.sidebar}<div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.micf}${I.compose}</div></div>${chatBody}${composer()}`),
-  phone('Sessions: swipe from the left <small>· drawer</small>', `<div class="nav">${I.sidebar}<div class="title">Home lab</div><div class="group">${I.micf}${I.compose}</div></div>${chatBody}${composer()}<div class="dim"></div><div class="drawer">${sessions}<div class="foot"><div class="s recs">${I.micf} Recordings</div><div class="s">${I.sparkles} Skills</div><div class="s">${I.gear} Settings</div></div></div>`),
-  phone('Recordings: from the drawer <small>· pushed page, back returns</small>', `<div class="nav"><span class="back">${I.chev} Chats</span><div class="title">Recordings</div><span class="round micb" style="width:30px;height:30px">${I.micf}</span></div>${recRows}<div class="list"><div class="foot">Recordings are deleted automatically after 30 days.</div></div>`),
-];
 const menu = `<div class="dim"></div><div class="menu">
   <div class="mi">${I.compose} Rename</div><div class="mi">${I.sparkles} Skills for this chat</div><div class="mi">${I.list} Model · glm-5.3 · medium</div><div class="mi">${I.term} Pin</div><div class="mi danger">${I.x} Delete chat</div></div>`;
 // One inbox: chats and recordings together, newest first, told apart by their icon.
@@ -58,7 +53,6 @@ const C = [
   phone('4 · A recording <small>· pushed; play, send, delete</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Recording</div><span style="width:22px"></span></div>${recDetail}`),
   phone('5 · Recorder <small>· the mic button on the inbox</small>', `<div class="rec"><div class="bar"><span class="back">${I.chev} Inbox</span>${I.chev}</div><div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div><div class="note"></div><div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div></div>`),
 ];
-const block = (n, title, why, frames) => `<h2 class="v">${n} · ${title}</h2><p class="why">${why}</p><div class="gallery">${frames.join('')}</div>`;
+const block = (n, title, why, frames) => `<h2 class="v">${n}${title ? " · " + title : ""}</h2><p class="why">${why}</p><div class="gallery">${frames.join('')}</div>`;
 document.getElementById('study').innerHTML =
-  block('C', 'Inbox — chosen', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C) +
-  block('B', 'Drawer — not chosen, kept for reference', 'What the app does today, tightened: land in the last chat, swipe from the left for sessions, and Recordings, Skills and Settings live at the bottom of the drawer. Fewest chrome pixels; everything else is a swipe or a push.', B);
+  block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C);
