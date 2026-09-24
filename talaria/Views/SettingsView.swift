@@ -6,6 +6,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var status: String?
     @State private var busy = false
+    @State private var speakrStatus: String?
+    @State private var speakrBusy = false
     @AppStorage(Speaker.voiceKey) private var voiceId = ""
 
     var body: some View {
@@ -45,6 +47,19 @@ struct SettingsView: View {
                         .keyboardType(.URL).textContentType(.URL)
                         .autocorrectionDisabled().textInputAutocapitalization(.never)
                     SecureField("API token", text: $settings.speakrToken)
+                    Button {
+                        Task { await testSpeakr() }
+                    } label: {
+                        HStack {
+                            Text("Test connection")
+                            Spacer()
+                            if speakrBusy { ProgressView() }
+                        }
+                    }
+                    .disabled(speakrBusy || settings.speakr == nil)
+                    if let speakrStatus {
+                        Text(speakrStatus).font(.footnote).foregroundStyle(speakrStatus.hasPrefix("Connected") ? .green : .red)
+                    }
                 } header: {
                     Text("Speakr (meeting recordings)")
                 } footer: {
@@ -98,6 +113,20 @@ struct SettingsView: View {
         case .connected: return "Connected"
         case .reconnecting(let n): return "Reconnecting (\(n))…"
         case .failed(let why): return "Failed: \(why)"
+        }
+    }
+
+    private func testSpeakr() async {
+        guard let client = model.settings.speakr else { return }
+        speakrBusy = true
+        defer { speakrBusy = false }
+        do {
+            let user = try await client.whoAmI()
+            speakrStatus = "Connected as \(user)"
+        } catch let e as URLError {
+            speakrStatus = "\(e.localizedDescription) (URLError \(e.code.rawValue))"
+        } catch {
+            speakrStatus = error.localizedDescription
         }
     }
 

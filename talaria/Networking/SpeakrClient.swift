@@ -25,6 +25,22 @@ nonisolated struct SpeakrClient: Sendable {
 
     func pageURL(id: Int) -> URL { baseURL.appendingPathComponent("recordings/\(id)") }
 
+    /// Checks the URL and token together: `GET /api/v1/users/me` answers with the token's user.
+    func whoAmI() async throws -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/v1/users/me"))
+        req.timeoutInterval = 15
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse else { throw Error.badResponse }
+        guard http.statusCode == 200 else {
+            let text = http.statusCode == 401 ? "invalid or expired token" : (String(data: data.prefix(120), encoding: .utf8) ?? "")
+            throw Error.http(http.statusCode, text)
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = json["username"] as? String else { throw Error.badResponse }
+        return name
+    }
+
     /// The upload request with its multipart body written to a temporary file, as background
     /// transfers need. The caller deletes the body file when the transfer is done.
     func uploadRequest(file: URL, notes: String? = nil) throws -> (URLRequest, URL) {
