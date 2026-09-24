@@ -19,9 +19,9 @@ struct RecordingModeView: View {
                     VStack(spacing: 10) {
                         Spacer(minLength: 0)
                         HStack(spacing: 8) {
-                            Image(systemName: icon(s)).foregroundStyle(color(s))
+                            Image(systemName: RecorderStyle.icon(s.phase, interrupted: s.interrupted)).foregroundStyle(RecorderStyle.color(s.phase, interrupted: s.interrupted))
                                 .symbolEffect(.pulse, isActive: s.phase == .recording && !s.interrupted)
-                            Text(title(s)).font(.title3.weight(.semibold))
+                            Text(s.phase == .idle ? "Ready to record" : RecorderStyle.title(s.phase, interrupted: s.interrupted)).font(.title3.weight(.semibold))
                         }
                         timer(s)
                             .font(.system(size: 84, weight: .light, design: .rounded).monospacedDigit())
@@ -70,22 +70,22 @@ struct RecordingModeView: View {
             case .recording, .paused:
                 row(rowHeight) {
                     if s.phase == .paused {
-                        round("Resume", "record.fill", .red, d) { Task { try? await rec.resume() } }
+                        round(.resume, d) { Task { try? await rec.resume() } }
                     } else {
-                        round("Pause", "pause.fill", .orange, d) { try? rec.pause() }
+                        round(.pause, d) { try? rec.pause() }
                     }
                 }
                 row(rowHeight) {
                     HStack(spacing: d * 0.6) {
-                        round("Cancel", "xmark", .gray, d) { confirmCancel = true }
-                        round("Complete", "checkmark", .green, d) { Task { try? await rec.stop() } }
+                        round(.cancel, d) { confirmCancel = true }
+                        round(.complete, d) { Task { try? await rec.stop() } }
                     }
                 }
             case .uploading:
                 ProgressView().controlSize(.large).frame(maxHeight: .infinity)
             case .idle, .startFailed:
                 row(rowHeight) {
-                    round("Record", "mic.fill", .red, d) { Task { try? await rec.start() } }
+                    round(.record, d) { Task { try? await rec.start() } }
                 }
                 row(rowHeight) { EmptyView() }
             case .sent, .failed:
@@ -97,7 +97,7 @@ struct RecordingModeView: View {
                     }
                 }
                 row(rowHeight) {
-                    round("Close", "xmark", .gray, d) { rec.clear(); dismiss() }
+                    round(.close, d) { rec.clear(); dismiss() }
                 }
             }
         }
@@ -108,50 +108,9 @@ struct RecordingModeView: View {
     }
 
     /// A round icon button, big enough to hit without looking.
-    private func round(_ name: String, _ symbol: String, _ tint: Color, _ diameter: CGFloat, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: diameter * 0.36, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: diameter, height: diameter)
-                .background(Circle().fill(tint.gradient))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(name)
-    }
-
-    private func icon(_ s: RecordingState) -> String {
-        switch s.phase {
-        case .recording: return s.interrupted ? "phone.fill" : "mic.fill"
-        case .paused: return "pause.circle.fill"
-        case .uploading: return "icloud.and.arrow.up"
-        case .sent: return "checkmark.circle.fill"
-        case .failed, .startFailed: return "exclamationmark.triangle.fill"
-        case .idle: return "mic"
-        }
-    }
-
-    private func color(_ s: RecordingState) -> Color {
-        switch s.phase {
-        case .recording: return s.interrupted ? .orange : .red
-        case .paused: return .orange
-        case .sent: return .green
-        case .failed, .startFailed: return .red
-        case .uploading, .idle: return .secondary
-        }
-    }
-
-    private func title(_ s: RecordingState) -> String {
-        switch s.phase {
-        case .recording: return s.interrupted ? "Paused for a call" : "Recording"
-        case .paused: return "Paused"
-        case .uploading: return "Sending to Speakr"
-        case .sent: return "Sent to Speakr"
-        case .failed: return "Not sent"
-        case .startFailed: return "Could not start"
-        case .idle: return "Ready to record"
-        }
+    private func round(_ action: RecorderStyle.Action, _ diameter: CGFloat, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) { RoundActionLabel(action: action, diameter: diameter) }
+            .buttonStyle(.plain)
     }
 
     private func caption(_ s: RecordingState) -> String {

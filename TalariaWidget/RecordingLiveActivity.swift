@@ -12,8 +12,10 @@ struct RecordingLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(ActivityGlyphs.title(context.state), systemImage: ActivityGlyphs.icon(context.state))
-                        .font(.headline).foregroundStyle(ActivityGlyphs.color(context.state))
+                    Label(RecorderStyle.title(context.state.phase, interrupted: context.state.interrupted),
+                          systemImage: RecorderStyle.icon(context.state.phase, interrupted: context.state.interrupted))
+                        .font(.headline)
+                        .foregroundStyle(RecorderStyle.color(context.state.phase, interrupted: context.state.interrupted))
                         .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -23,15 +25,17 @@ struct RecordingLiveActivity: Widget {
                     if let m = context.state.message, !context.state.phase.isActive {
                         Text(m).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     } else {
-                        ActivityButtons(state: context.state)
+                        ActivityButtons(state: context.state, diameter: 40)
                     }
                 }
             } compactLeading: {
-                Image(systemName: ActivityGlyphs.icon(context.state)).foregroundStyle(ActivityGlyphs.color(context.state))
+                Image(systemName: RecorderStyle.icon(context.state.phase, interrupted: context.state.interrupted))
+                    .foregroundStyle(RecorderStyle.color(context.state.phase, interrupted: context.state.interrupted))
             } compactTrailing: {
                 ActivityTimer(state: context.state).font(.caption.monospacedDigit()).frame(maxWidth: 56)
             } minimal: {
-                Image(systemName: ActivityGlyphs.icon(context.state)).foregroundStyle(ActivityGlyphs.color(context.state))
+                Image(systemName: RecorderStyle.icon(context.state.phase, interrupted: context.state.interrupted))
+                    .foregroundStyle(RecorderStyle.color(context.state.phase, interrupted: context.state.interrupted))
             }
         }
     }
@@ -42,9 +46,11 @@ struct LockScreenRecordingView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: ActivityGlyphs.icon(state)).font(.title2).foregroundStyle(ActivityGlyphs.color(state))
+            Image(systemName: RecorderStyle.icon(state.phase, interrupted: state.interrupted))
+                .font(.title2)
+                .foregroundStyle(RecorderStyle.color(state.phase, interrupted: state.interrupted))
             VStack(alignment: .leading, spacing: 2) {
-                Text(ActivityGlyphs.title(state)).font(.headline)
+                Text(RecorderStyle.title(state.phase, interrupted: state.interrupted)).font(.headline)
                 if let m = state.message, !state.phase.isActive {
                     Text(m).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 } else {
@@ -53,7 +59,7 @@ struct LockScreenRecordingView: View {
             }
             Spacer(minLength: 4)
             if state.phase.isActive {
-                ActivityButtons(state: state)
+                ActivityButtons(state: state, diameter: 40)
             }
         }
     }
@@ -70,62 +76,25 @@ struct ActivityTimer: View {
     }
 }
 
+/// Cancel, Pause/Resume, Complete: the same round buttons as the widget and the app.
 struct ActivityButtons: View {
     let state: RecordingActivityAttributes.ContentState
+    let diameter: CGFloat
+
     var body: some View {
-        HStack(spacing: 8) {
-            if state.phase.isActive {
-                Button(intent: CancelRecordingIntent()) { Image(systemName: "xmark") }
+        HStack(spacing: diameter * 0.3) {
+            Button(intent: CancelRecordingIntent()) { RoundActionLabel(action: .cancel, diameter: diameter) }
+            if state.phase == .paused {
+                Button(intent: ResumeRecordingIntent()) { RoundActionLabel(action: .resume, diameter: diameter) }
+            } else {
+                Button(intent: PauseRecordingIntent()) { RoundActionLabel(action: .pause, diameter: diameter) }
             }
-            if state.phase == .recording {
-                Button(intent: PauseRecordingIntent()) { Image(systemName: "pause.fill") }
-            } else if state.phase == .paused {
-                Button(intent: ResumeRecordingIntent()) { Image(systemName: "record.fill") }
-            }
-            if state.phase.isActive {
-                Button(intent: StopRecordingIntent()) { Image(systemName: "checkmark") }.tint(.red)
-            }
+            Button(intent: StopRecordingIntent()) { RoundActionLabel(action: .complete, diameter: diameter) }
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .buttonStyle(.plain)
     }
 }
 
 extension RecordingState.Phase {
     var isActive: Bool { self == .recording || self == .paused }
-}
-
-enum ActivityGlyphs {
-    static func icon(_ s: RecordingActivityAttributes.ContentState) -> String {
-        switch s.phase {
-        case .recording: return s.interrupted ? "phone.fill" : "record.circle"
-        case .paused: return "pause.circle"
-        case .uploading: return "icloud.and.arrow.up"
-        case .sent: return "checkmark.circle.fill"
-        case .failed, .startFailed: return "exclamationmark.triangle.fill"
-        case .idle: return "mic.fill"
-        }
-    }
-
-    static func color(_ s: RecordingActivityAttributes.ContentState) -> Color {
-        switch s.phase {
-        case .recording: return s.interrupted ? .orange : .red
-        case .paused: return .orange
-        case .sent: return .green
-        case .failed, .startFailed: return .red
-        case .uploading, .idle: return .secondary
-        }
-    }
-
-    static func title(_ s: RecordingActivityAttributes.ContentState) -> String {
-        switch s.phase {
-        case .recording: return s.interrupted ? "On a call, resumes after" : "Recording"
-        case .paused: return "Paused"
-        case .uploading: return "Sending to Speakr…"
-        case .sent: return "Sent to Speakr"
-        case .failed: return "Not sent"
-        case .startFailed: return "Couldn't start"
-        case .idle: return "Recorder"
-        }
-    }
 }
