@@ -71,7 +71,7 @@ const block = (n, title, why, frames) => `<h2 class="v">${n}${title ? " · " + t
 // with markdown; one big Pause (mic stops, Hermes waits) and a Stop that returns to the text chat.
 const vTop = (status, cls = '') => `<div class="nav"><span class="back">${I.chev} Home lab</span><div class="title"></div><span style="width:22px"></span></div>
   <div class="vstatus ${cls}"><span class="vdot"></span>${status}</div>`;
-const vButtons = (paused) => `<div class="vbuttons"><span class="big ${paused ? 'resume' : 'pause'}">${paused ? I.micf : I.pause}</span><span class="big stop">${I.x}</span></div>`;
+const vButtons = (paused) => `<div class="vbuttons"><span class="big ${paused ? 'resume' : 'pause'}">${paused ? I.micf : I.pause}</span></div>`;
 const V = [
   phone('1 · Listening <small>· what is understood, as you speak</small>', `${vTop('Listening', 'listen')}
     <div class="vbody">
@@ -92,5 +92,5 @@ const V = [
     </div>${vButtons(true)}`),
 ];
 document.getElementById('study').innerHTML =
-  block('Modes', '', 'Three ways to use Talaria. <b>Chat</b>: the text composer, with the mic in it for dictating a message. <b>Voice chat</b>: the composer\'s mic held, or the waveform button in the chat title bar, opens the voice screen below; Stop returns to the text chat with the exchange kept. <b>Meeting recording</b>: the mic on the inbox, the recorder screen, sent to Speakr. Chat and voice chat share a session; a recording is its own inbox row.', V) +
+  block('Modes', '', 'Three ways to use Talaria. <b>Chat</b>: the text composer, with the mic in it for dictating a message. <b>Voice chat</b>: the composer\'s mic held, or the waveform button in the chat title bar, opens the voice screen below; Back returns to the text chat with the exchange kept. <b>Meeting recording</b>: the mic on the inbox, the recorder screen, sent to Speakr. Chat and voice chat share a session; a recording is its own inbox row.', V) +
   block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. The filter next to search narrows the list to chats or recordings. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C);
