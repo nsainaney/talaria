@@ -11,29 +11,43 @@ struct RecordingModeView: View {
 
     var body: some View {
         let s = rec.state
-        VStack(spacing: 24) {
-            HStack {
-                Spacer()
-                if s.isActive {
-                    Button { dismiss() } label: { Image(systemName: "chevron.down").font(.title3) }
+        GeometryReader { geo in
+            let h = geo.size.height
+            VStack(spacing: 0) {
+                // Top third: status and the timer.
+                ZStack(alignment: .topTrailing) {
+                    VStack(spacing: 10) {
+                        Spacer(minLength: 0)
+                        HStack(spacing: 8) {
+                            Image(systemName: icon(s)).foregroundStyle(color(s))
+                                .symbolEffect(.pulse, isActive: s.phase == .recording && !s.interrupted)
+                            Text(title(s)).font(.title3.weight(.semibold))
+                        }
+                        timer(s)
+                            .font(.system(size: 84, weight: .light, design: .rounded).monospacedDigit())
+                            .minimumScaleFactor(0.6).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity)
+                    if s.isActive {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.down").font(.title3).padding(12)
+                        }
                         .accessibilityLabel("Hide")
+                    }
                 }
+                .frame(height: h / 3)
+                // Middle: a line of context.
+                Text(caption(s)).font(.footnote).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).padding(.horizontal, 32)
+                    .frame(maxHeight: .infinity)
+                // Bottom half: two rows of large buttons, a quarter of the screen each.
+                controls(s, rowHeight: h / 4)
+                    .frame(height: h / 2)
             }
-            .padding(.horizontal)
-            Spacer()
-            HStack(spacing: 8) {
-                Image(systemName: icon(s)).foregroundStyle(color(s))
-                    .symbolEffect(.pulse, isActive: s.phase == .recording && !s.interrupted)
-                Text(title(s)).font(.title3.weight(.semibold))
-            }
-            timer(s)
-                .font(.system(size: 72, weight: .light, design: .rounded).monospacedDigit())
-            Text(caption(s)).font(.footnote).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).padding(.horizontal, 32)
-            Spacer()
-            controls(s)
         }
-        .padding(.bottom, 32)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
         .background(Color(.systemBackground))
         .confirmationDialog("Discard this recording?", isPresented: $confirmCancel, titleVisibility: .visible) {
             Button("Discard recording", role: .destructive) { Task { try? await rec.cancel() } }
@@ -51,49 +65,47 @@ struct RecordingModeView: View {
         }
     }
 
-    @ViewBuilder private func controls(_ s: RecordingState) -> some View {
-        VStack(spacing: 14) {
+    @ViewBuilder private func controls(_ s: RecordingState, rowHeight: CGFloat) -> some View {
+        VStack(spacing: 12) {
             switch s.phase {
             case .recording, .paused:
                 if s.phase == .paused {
-                    Button { Task { try? await rec.resume() } } label: {
-                        Label("Resume", systemImage: "record.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent).tint(.red)
+                    bigButton("Resume", "record.fill", .red) { Task { try? await rec.resume() } }
                 } else {
-                    Button { try? rec.pause() } label: {
-                        Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
+                    bigButton("Pause", "pause.fill", .orange) { try? rec.pause() }
                 }
-                HStack(spacing: 14) {
-                    Button(role: .destructive) { confirmCancel = true } label: {
-                        Label("Cancel", systemImage: "xmark").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    Button { Task { try? await rec.stop() } } label: {
-                        Label("Complete", systemImage: "checkmark").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent).tint(.green)
+                HStack(spacing: 12) {
+                    bigButton("Cancel", "xmark", .gray) { confirmCancel = true }
+                    bigButton("Complete", "checkmark", .green) { Task { try? await rec.stop() } }
                 }
             case .uploading:
-                ProgressView().controlSize(.large)
+                ProgressView().controlSize(.large).frame(maxHeight: .infinity)
             case .sent, .failed, .startFailed, .idle:
                 if let id = s.speakrRecordingId, let client = model.settings.speakr {
                     Link(destination: client.pageURL(id: id)) {
-                        Label("Open in Speakr", systemImage: "arrow.up.right.square").frame(maxWidth: .infinity)
+                        Label("Open in Speakr", systemImage: "arrow.up.right.square")
+                            .font(.title2.weight(.semibold))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .buttonStyle(.bordered)
                 }
-                Button { rec.clear(); dismiss() } label: {
-                    Text("Close").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
+                bigButton("Close", "xmark", .gray) { rec.clear(); dismiss() }
             }
         }
-        .controlSize(.extraLarge)
-        .font(.title3.weight(.semibold))
-        .padding(.horizontal, 24)
+    }
+
+    /// A button that fills its row: easy to hit without looking.
+    private func bigButton(_ text: String, _ symbol: String, _ tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 34, weight: .semibold))
+                Text(text).font(.title3.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.roundedRectangle(radius: 22))
+        .tint(tint)
     }
 
     private func icon(_ s: RecordingState) -> String {
