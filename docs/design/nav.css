@@ -111,3 +111,24 @@
 .iconbtn .icon { width: 18px; height: 18px; }
 .filter { padding: 8px 9px; }
 .menu.filtermenu { top: 96px; }
+
+/* expanded recording row */
+.sess .s.expanded { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px 12px 8px; background: rgba(255,255,255,.9); }
+.sess .s.expanded .srow { display: flex; align-items: center; gap: 10px; }
+.sess .s.expanded .more { width: 28px; height: 28px; background: transparent; color: var(--accent); }
+.scrub2 .track { height: 5px; border-radius: 3px; background: rgba(20,30,60,.12); position: relative; } .scrub2 .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; border-radius: 3px; background: var(--accent); }
+.scrub2 .times { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.ctl { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 0; }
+.ctl .c { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
+.ctl .c .icon { width: 26px; height: 26px; }
+.ctl .c.play .icon { width: 30px; height: 30px; }
+.ctl .c.send { color: var(--accent); } .ctl .c.del { color: var(--rec); }
+
+.sess .s .t .edit { display: inline-block; padding: 2px 6px; margin: -2px -6px; border-radius: 6px; background: rgba(62,99,240,.10); }
+.sess .s .t .edit .caret { background: var(--accent); height: 1.05em; vertical-align: -3px; }
+
+.ctl .c.resend { color: var(--muted); }
+.alert { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); width: 270px; background: rgba(255,255,255,.96); border: 1px solid var(--line); border-radius: 14px; z-index: 5; text-align: center; padding: 18px 16px 0; }
+.alert .at { font-weight: 600; font-size: 17px; } .alert .am { font-size: 13px; color: var(--muted); margin: 6px 0 14px; line-height: 1.4; }
+.alert .ab { display: flex; border-top: 1px solid var(--line); margin: 0 -16px; } .alert .ab span { flex: 1; padding: 12px; font-size: 16px; color: var(--accent); }
+.alert .ab span + span { border-left: 1px solid var(--line); } .alert .ab .go { font-weight: 600; }

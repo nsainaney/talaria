@@ -22,7 +22,7 @@ const composer = (cls = '') => `<div class="composer ${cls}"><div class="row"><s
 const tabbar = (on) => `<div class="tabbar">${[['Chat', I.sparkles], ['Recorder', I.micf], ['Skills', I.list], ['Settings', I.gear]].map(([n, i]) => `<div class="tab ${n === on ? 'on' : ''}">${i}${n}</div>`).join('')}</div>`;
 
 const menu = `<div class="dim"></div><div class="menu">
-  <div class="mi">${I.compose} Rename</div><div class="mi">${I.sparkles} Skills for this chat</div><div class="mi">${I.list} Model · glm-5.3 · medium</div><div class="mi">${I.term} Pin</div><div class="mi danger">${I.x} Delete chat</div></div>`;
+  <div class="mi">${I.sparkles} Skills for this chat</div><div class="mi">${I.list} Model · glm-5.3 · medium</div><div class="mi">${I.term} Pin</div><div class="mi danger">${I.x} Delete chat</div></div>`;
 // One inbox: chats and recordings together, newest first, told apart by their icon.
 const searchRow = (label = "All") => `<div class="searchrow top"><div class="search">${I.list} Search</div><span class="iconbtn">${I.gear}</span><span class="filter">${I.filter} ${label}</span></div>`;
 const inbox = `
@@ -49,20 +49,31 @@ const inboxFiltered = `
     <div class="s"><span class="ic rec">${I.micf}</span><div class="t">Recording · 01:03<small>Sent to Speakr as #2</small></div><span class="when">10:57 PM</span></div>
     <div class="s"><span class="ic rec">${I.micf}</span><div class="t">Recording · 00:24<small>Not sent</small></div><span class="when">9:39 PM</span></div></div>
   <div class="menu filtermenu"><div class="mi">${I.list} All</div><div class="mi">${I.sparkles} Chats</div><div class="mi on">${I.micf} Recordings ${I.check}</div></div>`;
-const recDetail = `
-  <div class="detail">
-    <div class="dh"><span class="ic rec big">${I.micf}</span><div><div class="d">Wed, Sep 24 · 9:02 AM</div><div class="s">48:12 · 41 MB</div></div></div>
-    <div class="player"><span class="round play">${I.pause}</span><div class="scrub"><span>18:04</span><div class="track"><i></i></div><span>48:12</span></div></div>
-    <div class="status ok">${I.checkc} Sent to Speakr as #3 · 2 hours ago</div>
-    <div class="acts"><span class="b">${I.cloud} Send again</span></div>
-    <div class="acts"><span class="b danger">${I.x} Delete</span></div>
-  </div>`;
+// A recording expands in place, like Voice Memos: scrubber, then send · skip · play · skip · delete.
+const expandedRow = `
+    <div class="s expanded">
+      <div class="srow"><span class="ic rec">${I.micf}</span><div class="t"><span class="edit">Call with Roger<span class="caret"></span></span><small>48:12 · Sent to Speakr as #3 · 2 hours ago</small></div><span class="round more">${I.more}</span></div>
+      <div class="scrub2"><div class="track"><i></i></div><div class="times"><span>18:04</span><span>−30:08</span></div></div>
+      <div class="ctl"><span class="c send resend">${I.resend}</span><span class="c">${I.back15}</span><span class="c play">${I.play}</span><span class="c">${I.fwd15}</span><span class="c del">${I.trash}</span></div>
+    </div>`;
+const inboxExpanded = `
+  ${searchRow()}
+  <div class="sect">Active</div><div class="sess">
+    <div class="s on">${I.sparkles}<div class="t">Home lab<small>Both are safe to delete now that…</small></div><span class="badge">running</span></div></div>
+  <div class="sect">Today</div><div class="sess">
+    ${expandedRow}
+    <div class="s">${I.sparkles}<div class="t">Disk usage on the server<small>Two things, and one of them is mine.</small></div><span class="when">9:02</span></div>
+    <div class="s">${I.sparkles}<div class="t">Voice test<small>Allowed.</small></div><span class="when">7:41</span></div></div>
+  <div class="sect">Yesterday</div><div class="sess">
+    <div class="s"><span class="ic rec">${I.micf}</span><div class="t">Recording · 01:03<small>Sent to Speakr as #2</small></div><span class="when">10:57 PM</span></div>
+    <div class="s">${I.sparkles}<div class="t">Meeting digest · Sep 23<small>Saved 4 facts, proposed 2 reminders</small></div><span class="when">Tue</span></div></div>
+  <div class="dim"></div><div class="alert"><div class="at">Send to Speakr again?</div><div class="am">It is already there as recording #3. Sending again creates a second copy.</div><div class="ab"><span>Cancel</span><span class="go">Send again</span></div></div>`;
 const C = [
   phone('1 · Land: Inbox <small>· chats and recordings, newest first</small>', `${inbox}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
   phone('2 · Filter <small>· All, Chats or Recordings</small>', `${inboxFiltered}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
   phone('3 · A chat <small>· pushed; back returns to the inbox</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}`),
-  phone('4 · Chat title menu <small>· rename, skills, model, pin</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}${menu}`),
-  phone('5 · A recording <small>· pushed; play, send, delete</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Recording</div><span style="width:22px"></span></div>${recDetail}`),
+  phone('4 · Chat title menu <small>· skills, model, pin; tap the title itself to rename</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}${menu}`),
+  phone('5 · A recording <small>· expanded; resend asks first</small>', `${inboxExpanded}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
   phone('6 · Recorder <small>· the mic button on the inbox</small>', `<div class="rec"><div class="bar"><span class="back">${I.chev} Inbox</span>${I.chev}</div><div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div><div class="note"></div><div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div></div>`),
 ];
 const block = (n, title, why, frames) => `<h2 class="v">${n}${title ? " · " + title : ""}</h2><p class="why">${why}</p><div class="gallery">${frames.join('')}</div>`;
@@ -93,4 +104,4 @@ const V = [
 ];
 document.getElementById('study').innerHTML =
   block('Modes', '', 'Three ways to use Talaria. <b>Chat</b>: the text composer, with the mic in it for dictating a message. <b>Voice chat</b>: the composer\'s mic held, or the waveform button in the chat title bar, opens the voice screen below; Back returns to the text chat with the exchange kept. <b>Meeting recording</b>: the mic on the inbox, the recorder screen, sent to Speakr. Chat and voice chat share a session; a recording is its own inbox row.', V) +
-  block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. The filter next to search narrows the list to chats or recordings. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C);
+  block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. The filter next to search narrows the list to chats or recordings. A chat pushes a page with a real back button; the chevron by the chat title opens a menu for skills, model and pin. A recording expands in place, like Voice Memos: scrubber, then send, skip back, play, skip forward and delete. Send is a cloud on a recording that has not gone to Speakr; on one that has, it becomes a resend arrow and asks before making a second copy. Titles are edited in place: tap the title of an expanded recording, or the title of a chat in its title bar, and type. The two buttons at the bottom start a chat or a recording.', C);
