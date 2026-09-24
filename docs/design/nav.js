@@ -21,11 +21,6 @@ const composer = (cls = '') => `<div class="composer ${cls}"><div class="row"><s
   <div class="row"><span class="round plus">${I.plus}</span><div class="field"><span>Message Hermes</span></div><span class="round micb">${I.micf}</span><span class="round sendb">${I.send}</span></div></div>`;
 const tabbar = (on) => `<div class="tabbar">${[['Chat', I.sparkles], ['Recorder', I.micf], ['Skills', I.list], ['Settings', I.gear]].map(([n, i]) => `<div class="tab ${n === on ? 'on' : ''}">${i}${n}</div>`).join('')}</div>`;
 
-const A = [
-  phone('Land: Chat tab <small>· tab bar is always there</small>', `<div class="nav">${I.sidebar}<div class="title">Home lab</div><div class="group">${I.compose}</div></div>${chatBody}${composer('float')}${tabbar('Chat')}`),
-  phone('Sessions: tap ☰ <small>· half sheet over the chat</small>', `<div class="nav">${I.sidebar}<div class="title">Home lab</div><div class="group">${I.compose}</div></div>${chatBody}${composer('float')}${tabbar('Chat')}<div class="dim"></div><div class="sheet"><div class="grab"></div><div class="sh"><span>Chats</span><b>New</b></div>${sessions}</div>`),
-  phone('Recordings: Recorder tab <small>· mic on top, list below</small>', `<div class="nav"><span style="width:22px"></span><div class="title">Recorder</div><span style="width:22px"></span></div><div class="hub"><div class="card2"><span class="mic">${I.micf}</span><div class="t">Record a meeting<small>Sent to Speakr when you complete it</small></div></div></div><div class="sect">Recordings</div>${recRows}<div style="flex:1"></div>${tabbar('Recorder')}`),
-];
 const B = [
   phone('Land: the chat <small>· title is a menu</small>', `<div class="nav">${I.sidebar}<div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.micf}${I.compose}</div></div>${chatBody}${composer()}`),
   phone('Sessions: swipe from the left <small>· drawer</small>', `<div class="nav">${I.sidebar}<div class="title">Home lab</div><div class="group">${I.micf}${I.compose}</div></div>${chatBody}${composer()}<div class="dim"></div><div class="drawer">${sessions}<div class="foot"><div class="s recs">${I.micf} Recordings</div><div class="s">${I.sparkles} Skills</div><div class="s">${I.gear} Settings</div></div></div>`),
@@ -66,5 +61,4 @@ const C = [
 const block = (n, title, why, frames) => `<h2 class="v">${n} · ${title}</h2><p class="why">${why}</p><div class="gallery">${frames.join('')}</div>`;
 document.getElementById('study').innerHTML =
   block('C', 'Inbox — chosen', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C) +
-  block('A', 'Tabs', 'A floating tab bar: Chat, Recorder, Skills, Settings. You always know where you are and the recorder is one tap away, but sessions become a sheet inside the Chat tab, one level down.', A) +
-  block('B', 'Drawer', 'What the app does today, tightened: land in the last chat, swipe from the left for sessions, and Recordings, Skills and Settings live at the bottom of the drawer. Fewest chrome pixels; everything else is a swipe or a push.', B);
+  block('B', 'Drawer — not chosen, kept for reference', 'What the app does today, tightened: land in the last chat, swipe from the left for sessions, and Recordings, Skills and Settings live at the bottom of the drawer. Fewest chrome pixels; everything else is a swipe or a push.', B);
