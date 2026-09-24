@@ -24,8 +24,9 @@ const tabbar = (on) => `<div class="tabbar">${[['Chat', I.sparkles], ['Recorder'
 const menu = `<div class="dim"></div><div class="menu">
   <div class="mi">${I.compose} Rename</div><div class="mi">${I.sparkles} Skills for this chat</div><div class="mi">${I.list} Model · glm-5.3 · medium</div><div class="mi">${I.term} Pin</div><div class="mi danger">${I.x} Delete chat</div></div>`;
 // One inbox: chats and recordings together, newest first, told apart by their icon.
+const searchRow = (label = "All") => `<div class="searchrow"><div class="search">${I.list} Search</div><span class="filter">${I.filter} ${label}</span></div>`;
 const inbox = `
-  <div class="search">${I.list} Search</div>
+  ${searchRow()}
   <div class="sect">Active</div><div class="sess">
     <div class="s on"><span class="ic rec live">${I.micf}</span><div class="t">Recording · 00:12<small>Recording now</small></div><span class="badge livebadge">live</span></div>
     <div class="s on">${I.sparkles}<div class="t">Home lab<small>Both are safe to delete now that…</small></div><span class="badge">running</span></div></div>
@@ -38,6 +39,16 @@ const inbox = `
     <div class="s">${I.sparkles}<div class="t">Meeting digest · Sep 23<small>Saved 4 facts, proposed 2 reminders</small></div><span class="when">Tue</span></div>
     <div class="s"><span class="ic rec">${I.micf}</span><div class="t">Recording · 00:24<small>Not sent</small></div><span class="when">9:39 PM</span></div>
     <div class="s">${I.sparkles}<div class="t">Pocket TTS voices<small>vera is the closest match</small></div><span class="when">Tue</span></div></div>`;
+const inboxFiltered = `
+  ${searchRow("Recordings")}
+  <div class="sect">Active</div><div class="sess">
+    <div class="s on"><span class="ic rec live">${I.micf}</span><div class="t">Recording · 00:12<small>Recording now</small></div><span class="badge livebadge">live</span></div></div>
+  <div class="sect">Today</div><div class="sess">
+    <div class="s"><span class="ic rec">${I.micf}</span><div class="t">Recording · 48:12<small>Sent to Speakr as #3</small></div><span class="when">9:02</span></div></div>
+  <div class="sect">Yesterday</div><div class="sess">
+    <div class="s"><span class="ic rec">${I.micf}</span><div class="t">Recording · 01:03<small>Sent to Speakr as #2</small></div><span class="when">10:57 PM</span></div>
+    <div class="s"><span class="ic rec">${I.micf}</span><div class="t">Recording · 00:24<small>Not sent</small></div><span class="when">9:39 PM</span></div></div>
+  <div class="menu filtermenu"><div class="mi">${I.list} All</div><div class="mi">${I.sparkles} Chats</div><div class="mi on">${I.micf} Recordings ${I.check}</div></div>`;
 const recDetail = `
   <div class="detail">
     <div class="dh"><span class="ic rec big">${I.micf}</span><div><div class="d">Wed, Sep 24 · 9:02 AM</div><div class="s">48:12 · 41 MB</div></div></div>
@@ -48,11 +59,12 @@ const recDetail = `
   </div>`;
 const C = [
   phone('1 · Land: Inbox <small>· chats and recordings, newest first</small>', `<div class="nav"><span style="width:22px"></span><div class="title">Talaria</div><div class="group">${I.gear}</div></div>${inbox}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
-  phone('2 · A chat <small>· pushed; back returns to the inbox</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}`),
-  phone('3 · Chat title menu <small>· rename, skills, model, pin</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}${menu}`),
-  phone('4 · A recording <small>· pushed; play, send, delete</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Recording</div><span style="width:22px"></span></div>${recDetail}`),
-  phone('5 · Recorder <small>· the mic button on the inbox</small>', `<div class="rec"><div class="bar"><span class="back">${I.chev} Inbox</span>${I.chev}</div><div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div><div class="note"></div><div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div></div>`),
+  phone('2 · Filter <small>· All, Chats or Recordings</small>', `<div class="nav"><span style="width:22px"></span><div class="title">Talaria</div><div class="group">${I.gear}</div></div>${inboxFiltered}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
+  phone('3 · A chat <small>· pushed; back returns to the inbox</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}`),
+  phone('4 · Chat title menu <small>· rename, skills, model, pin</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}${menu}`),
+  phone('5 · A recording <small>· pushed; play, send, delete</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Recording</div><span style="width:22px"></span></div>${recDetail}`),
+  phone('6 · Recorder <small>· the mic button on the inbox</small>', `<div class="rec"><div class="bar"><span class="back">${I.chev} Inbox</span>${I.chev}</div><div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div><div class="note"></div><div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div></div>`),
 ];
 const block = (n, title, why, frames) => `<h2 class="v">${n}${title ? " · " + title : ""}</h2><p class="why">${why}</p><div class="gallery">${frames.join('')}</div>`;
 document.getElementById('study').innerHTML =
-  block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C);
+  block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. The filter next to search narrows the list to chats or recordings. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C);

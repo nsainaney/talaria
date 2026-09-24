@@ -20,6 +20,7 @@ const I = {
   cloud: '<svg class="icon" viewBox="0 0 24 24"><path d="M7 18a4 4 0 0 1-.6-8 6 6 0 0 1 11.4 1.5A3.5 3.5 0 0 1 17.5 18z"/><path d="M12 12v6M9.5 14.5L12 12l2.5 2.5"/></svg>',
   dot: '<svg class="icon fill" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg>',
   dashed: '<svg class="icon" viewBox="0 0 24 24" stroke-dasharray="3 3"><circle cx="12" cy="12" r="8"/></svg>',
+  filter: '<svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>',
   checkc: '<svg class="icon fill" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.5 14.5L6 12l1.5-1.5 3 3 6-6L18 9z"/></svg>',
 };
 const phone = (name, inner, extra = '') => `<div class="frame"><h2>${name}</h2><div class="phone ${extra}"><div class="island"></div><div class="status"><span>9:41</span><span>●●●</span></div>${inner}<div class="home"></div></div></div>`;
