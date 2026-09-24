@@ -31,8 +31,14 @@ final class BackgroundRecorder: RecordingCommands {
 
     enum Error: LocalizedError {
         case microphoneDenied, alreadyRecording, notRecording, couldNotStart
+        case audioSession(NSError)
         var errorDescription: String? {
             switch self {
+            case .audioSession(let e):
+                // Four-char codes read better than decimals: 561015905 is '!pla', "cannot start in background".
+                let code = UInt32(truncatingIfNeeded: e.code)
+                let tag = String(bytes: [24, 16, 8, 0].map { UInt8((code >> $0) & 0xff) }, encoding: .ascii) ?? ""
+                return "Audio session error \(e.code) '\(tag)': \(e.localizedDescription)"
             case .microphoneDenied: return "Talaria needs microphone access. Open the app once to allow it."
             case .alreadyRecording: return "A recording is already running."
             case .notRecording: return "No recording is running."
@@ -89,7 +95,7 @@ final class BackgroundRecorder: RecordingCommands {
         do {
             try await beginRecording()
         } catch {
-            log.error("start failed: \(error.localizedDescription, privacy: .public)")
+            log.error("start failed: \(error.localizedDescription, privacy: .public) [\((error as NSError).domain, privacy: .public) \((error as NSError).code)] app state \(UIApplication.shared.applicationState.rawValue) activities \(Activity<RecordingActivityAttributes>.activities.count)")
             update { $0.phase = .startFailed; $0.timerStart = nil; $0.message = error.localizedDescription }
             throw error
         }
@@ -106,9 +112,17 @@ final class BackgroundRecorder: RecordingCommands {
         guard granted else { throw Error.microphoneDenied }
         willStart?()
 
+        // The Live Activity comes first: the system ties background recording from an intent to a
+        // showing activity, so it must exist before the audio session is activated.
+        startActivity()
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default, options: [])
-        try session.setActive(true)
+        do {
+            try session.setCategory(.record, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            endActivity(after: 0)
+            throw Error.audioSession(error as NSError)
+        }
 
         let name = Self.fileName()
         let url = MeetingRecorder.recordingsDirectory().appendingPathComponent(name)
@@ -120,8 +134,6 @@ final class BackgroundRecorder: RecordingCommands {
         ]
         let r = try AVAudioRecorder(url: url, settings: settings)
         r.prepareToRecord()
-        // The Live Activity comes first: background recording from an intent expects one to be showing.
-        startActivity()
         guard r.record() else {
             endActivity(after: 0)
             try? session.setActive(false)
@@ -183,6 +195,20 @@ final class BackgroundRecorder: RecordingCommands {
         } catch {
             finish(.failed, "Could not start the upload: \(error.localizedDescription)", recorded: total)
         }
+    }
+
+    func cancel() async throws {
+        guard let recorder, state.isActive else { throw Error.notRecording }
+        resumeAttempts?.cancel()
+        recorder.stop()
+        self.recorder = nil
+        runningSince = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+        fileURL = nil
+        log.info("cancelled")
+        set(RecordingState(micGranted: state.micGranted, speakrConfigured: speakr != nil))
+        endActivity(after: 0)
     }
 
     /// Clear the outcome shown after a stop.

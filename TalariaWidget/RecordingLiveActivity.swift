@@ -74,13 +74,16 @@ struct ActivityButtons: View {
     let state: RecordingActivityAttributes.ContentState
     var body: some View {
         HStack(spacing: 8) {
+            if state.phase.isActive {
+                Button(intent: CancelRecordingIntent()) { Image(systemName: "xmark") }
+            }
             if state.phase == .recording {
                 Button(intent: PauseRecordingIntent()) { Image(systemName: "pause.fill") }
             } else if state.phase == .paused {
-                Button(intent: ResumeRecordingIntent()) { Image(systemName: "record.fill") }.tint(.red)
+                Button(intent: ResumeRecordingIntent()) { Image(systemName: "record.fill") }
             }
             if state.phase.isActive {
-                Button(intent: StopRecordingIntent()) { Image(systemName: "stop.fill") }.tint(.red)
+                Button(intent: StopRecordingIntent()) { Image(systemName: "checkmark") }.tint(.red)
             }
         }
         .buttonStyle(.bordered)

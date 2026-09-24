@@ -25,13 +25,16 @@ struct RecordingBanner: View {
                     }
                 }
                 Spacer(minLength: 4)
+                if s.isActive {
+                    Button { Task { try? await rec.cancel() } } label: { Image(systemName: "xmark") }
+                }
                 if s.phase == .recording {
                     Button { try? rec.pause() } label: { Image(systemName: "pause.fill") }
                 } else if s.phase == .paused {
                     Button { Task { try? await rec.resume() } } label: { Image(systemName: "record.fill").foregroundStyle(.red) }
                 }
                 if s.isActive {
-                    Button { Task { try? await rec.stop() } } label: { Image(systemName: "stop.fill") }
+                    Button { Task { try? await rec.stop() } } label: { Image(systemName: "checkmark").foregroundStyle(.red) }
                 } else if s.phase != .uploading {
                     if let id = s.speakrRecordingId, let client = model.settings.speakr {
                         Link(destination: client.pageURL(id: id)) { Image(systemName: "arrow.up.right.square") }

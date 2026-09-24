@@ -12,6 +12,8 @@ import os
     func pause() throws
     func resume() async throws
     func stop() async throws
+    /// Discard the recording: nothing is kept or sent.
+    func cancel() async throws
 }
 
 @MainActor enum RecordingIntentHost {
@@ -66,6 +68,16 @@ nonisolated struct StopRecordingIntent: LiveActivityIntent, AudioRecordingIntent
 
     func perform() async throws -> some IntentResult {
         try await RecordingIntentHost.run("stop") { try await $0.stop() }
+        return .result()
+    }
+}
+
+nonisolated struct CancelRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
+    static let title: LocalizedStringResource = "Cancel recording"
+    static let description = IntentDescription("Discards the recording without sending it.")
+
+    func perform() async throws -> some IntentResult {
+        try await RecordingIntentHost.run("cancel") { try await $0.cancel() }
         return .result()
     }
 }

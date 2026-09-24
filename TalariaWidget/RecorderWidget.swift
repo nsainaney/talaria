@@ -55,16 +55,15 @@ struct RecorderWidgetView: View {
                 Image(systemName: "mic.fill").foregroundStyle(.red)
                 Text("Talaria").font(.headline)
                 Spacer(minLength: 0)
+                if state.isActive {
+                    Image(systemName: RecorderGlyphs.icon(state)).foregroundStyle(RecorderGlyphs.color(state)).font(.caption)
+                    timer.font(.subheadline.weight(.medium).monospacedDigit())
+                }
             }
             Spacer(minLength: 0)
             switch state.phase {
             case .recording, .paused:
-                HStack(spacing: 6) {
-                    Image(systemName: RecorderGlyphs.icon(state)).foregroundStyle(RecorderGlyphs.color(state))
-                        .font(.caption)
-                    timer.font(.title2.weight(.medium).monospacedDigit())
-                }
-                RecorderButtons(state: state, compact: family == .systemSmall)
+                RecorderButtons(state: state, compact: false)
             case .uploading:
                 Label("Sending to Speakr…", systemImage: "icloud.and.arrow.up").font(.footnote).foregroundStyle(.secondary)
             case .idle, .sent, .failed, .startFailed:
@@ -114,7 +113,12 @@ struct RecorderWidgetView: View {
                 }
             }
             Spacer(minLength: 0)
-            RecorderButtons(state: state, compact: true)
+            if state.isActive {
+                RecorderButtons(state: state, compact: true)
+            } else if state.phase != .uploading {
+                Button(intent: StartRecordingIntent()) { Image(systemName: "record.circle") }
+                    .buttonStyle(.bordered).controlSize(.small).tint(.red)
+            }
         }
     }
 }
@@ -136,33 +140,46 @@ struct RecordButton: View {
     }
 }
 
-/// Pause/Resume and Stop while a recording runs; Record otherwise.
+/// While a recording runs: Cancel and Done, then Pause or Resume. Compact: one row of icons.
 struct RecorderButtons: View {
     let state: RecordingState
     let compact: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            switch state.phase {
-            case .recording:
-                Button(intent: PauseRecordingIntent()) { label("Pause", "pause.fill") }
-                Button(intent: StopRecordingIntent()) { label("Stop", "stop.fill") }.tint(.red)
-            case .paused:
-                Button(intent: ResumeRecordingIntent()) { label("Resume", "record.fill") }.tint(.red)
-                Button(intent: StopRecordingIntent()) { label("Stop", "stop.fill") }
-            case .uploading:
-                EmptyView()
-            case .idle, .sent, .failed, .startFailed:
-                Button(intent: StartRecordingIntent()) { label("Record", "record.circle") }.tint(.red)
+        Group {
+            if compact {
+                HStack(spacing: 6) { cancel; pauseResume; done }
+            } else {
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) { cancel; done }
+                    pauseResume
+                }
             }
         }
         .buttonStyle(.bordered)
-        .controlSize(compact ? .small : .regular)
+        .controlSize(.small)
+    }
+
+    private var cancel: some View {
+        Button(intent: CancelRecordingIntent()) { label("Cancel", "xmark") }
+    }
+
+    private var done: some View {
+        Button(intent: StopRecordingIntent()) { label("Done", "checkmark") }.tint(.red)
+    }
+
+    @ViewBuilder private var pauseResume: some View {
+        if state.phase == .paused {
+            Button(intent: ResumeRecordingIntent()) { label("Resume", "record.fill") }
+        } else {
+            Button(intent: PauseRecordingIntent()) { label("Pause", "pause.fill") }
+        }
     }
 
     private func label(_ text: String, _ symbol: String) -> some View {
         Label(text, systemImage: symbol)
             .labelStyle(compact ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
+            .font(.caption.weight(.medium))
             .frame(maxWidth: compact ? nil : .infinity)
     }
 }
