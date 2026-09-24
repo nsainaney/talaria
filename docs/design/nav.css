@@ -85,7 +85,8 @@
 .menu .mi.on { color: var(--accent); } .menu .mi.on .icon:last-child { margin-left: auto; color: var(--accent); }
 
 /* voice chat */
-.vstatus { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); padding: 2px 0 8px; }
+.vstatus { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); padding: 0 12px 6px 16px; }
+.vstatus .pill.model { margin-left: auto; color: var(--text); font-weight: 500; }
 .vdot { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); }
 .vstatus.listen .vdot { background: var(--rec); box-shadow: 0 0 0 4px var(--rec-soft, rgba(255,69,58,.18)); } .vstatus.listen { color: var(--rec); }
 .vstatus.speak .vdot { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft, rgba(62,99,240,.18)); } .vstatus.speak { color: var(--accent); }
@@ -99,8 +100,8 @@
 /* Live transcript: the words being understood, with an × to drop them (someone else talking). */
 .vlive { display: flex; align-items: flex-start; gap: 10px; }
 .vlive .vtext { flex: 1; }
-.vlive .vdrop { flex: none; width: 32px; height: 32px; background: var(--glass); backdrop-filter: blur(20px); border: 1px solid var(--line); color: var(--muted); }
-.vlive .vdrop .icon { width: 14px; height: 14px; }
+.vlive .vdrop { flex: none; width: 52px; height: 52px; background: var(--glass); backdrop-filter: blur(20px); border: 1px solid var(--line); color: var(--muted); }
+.vlive .vdrop .icon { width: 20px; height: 20px; }
 .caret { display: inline-block; width: 2px; height: 1em; background: var(--accent); vertical-align: -2px; margin-left: 2px; }
 .vt { border-collapse: collapse; width: 100%; font-size: 14px; margin: 6px 0 10px; }
 .vt th, .vt td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); } .vt th { font-weight: 600; color: var(--muted); font-size: 12px; }
@@ -150,7 +151,6 @@
 .iconbtn.sm.on { background: var(--accent); color: #fff; border-color: transparent; }
 .nav .group { gap: 8px; }
 .menu:not(.filtermenu) { left: auto; right: 54px; transform: none; top: 62px; width: 230px; }
-.vmodel { display: flex; justify-content: center; padding-top: 6px; }
 .vbuttons { padding-top: 12px; }
 
 .opts { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; font-size: 13px; color: #444; }

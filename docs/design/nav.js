@@ -82,8 +82,8 @@ const block = (n, title, why, frames) => `<h2 class="v">${n}${title ? " · " + t
 // Voice chat: a minimal screen. Your words appear as they are understood; Hermes's reply renders
 // with markdown; one big Pause (mic stops, Hermes waits) and a Stop that returns to the text chat.
 const vTop = (status, cls = '') => `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Home lab</div><div class="group"><span class="iconbtn sm">${I.morec}</span><span class="modebtn">${I.compose}</span></div></div>
-  <div class="vstatus ${cls}"><span class="vdot"></span>${status}</div>`;
-const vButtons = (paused) => `<div class="vmodel"><span class="pill model"><i class="dot"></i>glm-5.3 · medium</span></div><div class="vbuttons"><span class="big ${paused ? 'resume' : 'pause'}">${paused ? I.micf : I.pause}</span></div>`;
+  <div class="vstatus ${cls}"><span class="vdot"></span>${status}<span class="pill model"><i class="dot"></i>glm-5.3 · medium</span></div>`;
+const vButtons = (paused) => `<div class="vbuttons"><span class="big ${paused ? 'resume' : 'pause'}">${paused ? I.micf : I.pause}</span></div>`;
 const V = [
   phone('1 · Listening <small>· the × drops what is being heard before it is sent</small>', `${vTop('Listening', 'listen')}
     <div class="vbody">

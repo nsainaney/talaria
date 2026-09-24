@@ -1,8 +1,8 @@
 import SwiftUI
 import MarkdownUI
 
-/// Voice mode for a chat: a status line, the last exchange (your words as they are understood,
-/// Hermes's reply rendered), the model pill, and one big Pause. Back leaves to the inbox; the
+/// Voice mode for a chat: a status line with the model pill, the last exchange (your words as they
+/// are understood, Hermes's reply rendered), and one big Pause. Back leaves to the inbox; the
 /// pencil in the title bar switches the same conversation back to text.
 struct VoiceChatView: View {
     @Environment(AppModel.self) private var model
@@ -14,7 +14,6 @@ struct VoiceChatView: View {
             status(voice)
             exchange(voice)
                 .opacity(voice.isPaused ? 0.55 : 1)
-            modelPill
             Button {
                 if voice.isPaused { voice.resume() } else { voice.pause() }
             } label: {
@@ -37,7 +36,9 @@ struct VoiceChatView: View {
                 Circle().fill(color).frame(width: 8, height: 8)
                     .overlay(Circle().stroke(color.opacity(0.3), lineWidth: 4).scaleEffect(1.8))
                     .symbolEffect(.pulse, isActive: v.state == .listening && !v.isPaused)
-                Text(text).font(.footnote.weight(.semibold)).foregroundStyle(color)
+                Text(text).font(.footnote.weight(.semibold)).foregroundStyle(color).lineLimit(1)
+                Spacer(minLength: 12)
+                modelPill
             }
             if let e = v.error {
                 Text(e).font(.caption2).foregroundStyle(Theme.rec).lineLimit(2)
@@ -45,7 +46,7 @@ struct VoiceChatView: View {
                 Text("Server voice unavailable, using the phone's: \(e)").font(.caption2).foregroundStyle(.orange).lineLimit(2)
             }
         }
-        .padding(.top, 6).padding(.bottom, 10).padding(.horizontal, 24)
+        .padding(.top, 4).padding(.bottom, 6).padding(.horizontal, 16)
     }
 
     private func statusText(_ v: VoiceController) -> (String, Color) {
@@ -104,8 +105,8 @@ struct VoiceChatView: View {
                             // Someone else was talking: drop these words before they are sent.
                             Button { v.discardUtterance() } label: {
                                 Image(systemName: "xmark")
-                                    .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                                    .frame(width: 32, height: 32).glass(16)
+                                    .font(.title3.weight(.semibold)).foregroundStyle(.secondary)
+                                    .frame(width: 52, height: 52).glass(26)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Don't send this")
@@ -144,8 +145,8 @@ struct VoiceChatView: View {
                 Image(systemName: "chevron.up.chevron.down").font(.caption2)
             }
             .font(.subheadline).foregroundStyle(.primary)
-            .padding(.horizontal, 12).frame(height: 32)
-            .glass(9)
+            .padding(.horizontal, 12).frame(height: 36)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .disabled(!model.gateway.isConnected)
     }
