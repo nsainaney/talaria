@@ -7,6 +7,7 @@ import os
 /// the background if needed) rather than in the widget extension, where nothing is registered.
 /// `AudioRecordingIntent` marks them as recording intents; it requires a Live Activity while recording.
 @MainActor protocol RecordingCommands: AnyObject {
+    var isRecordingActive: Bool { get }
     func start() async throws
     func pause() throws
     func resume() async throws
@@ -69,18 +70,16 @@ nonisolated struct StopRecordingIntent: LiveActivityIntent, AudioRecordingIntent
     }
 }
 
-/// Control Center toggle: on starts, off stops.
-nonisolated struct ToggleRecordingIntent: SetValueIntent, LiveActivityIntent, AudioRecordingIntent {
+/// Control Center button. iOS does not let an app begin recording while it is in the background,
+/// so this opens the app and starts there; a running recording is stopped instead.
+nonisolated struct RecordControlIntent: AppIntent {
     static let title: LocalizedStringResource = "Record"
-
-    @Parameter(title: "Recording")
-    var value: Bool
+    static let description = IntentDescription("Opens Talaria and starts a recording, or stops the one running.")
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
-        if value {
-            try await RecordingIntentHost.run("start") { try await $0.start() }
-        } else {
-            try await RecordingIntentHost.run("stop") { try await $0.stop() }
+        try await RecordingIntentHost.run("control") { commands in
+            if commands.isRecordingActive { try await commands.stop() } else { try await commands.start() }
         }
         return .result()
     }

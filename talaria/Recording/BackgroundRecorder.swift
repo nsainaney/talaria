@@ -13,6 +13,7 @@ final class BackgroundRecorder: RecordingCommands {
     static let shared = BackgroundRecorder()
 
     private(set) var state: RecordingState
+    var isRecordingActive: Bool { state.isActive }
 
     /// Called before recording starts so the app can release the microphone (voice mode).
     @ObservationIgnored var willStart: (() -> Void)?
@@ -89,14 +90,7 @@ final class BackgroundRecorder: RecordingCommands {
             try await beginRecording()
         } catch {
             log.error("start failed: \(error.localizedDescription, privacy: .public)")
-            let inBackground = UIApplication.shared.applicationState != .active
-            update {
-                $0.phase = .failed
-                $0.timerStart = nil
-                $0.message = inBackground
-                    ? "Could not start from here (\(error.localizedDescription)). Open Talaria and tap Record."
-                    : error.localizedDescription
-            }
+            update { $0.phase = .startFailed; $0.timerStart = nil; $0.message = error.localizedDescription }
             throw error
         }
     }

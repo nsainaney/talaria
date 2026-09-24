@@ -52,7 +52,7 @@ struct RecordingBanner: View {
         case .paused: return "pause.circle"
         case .uploading: return "icloud.and.arrow.up"
         case .sent: return "checkmark.circle.fill"
-        case .failed: return "exclamationmark.triangle.fill"
+        case .failed, .startFailed: return "exclamationmark.triangle.fill"
         case .idle: return ""
         }
     }
@@ -63,7 +63,7 @@ struct RecordingBanner: View {
         case .paused: return .orange
         case .uploading: return .secondary
         case .sent: return .green
-        case .failed: return .red
+        case .failed, .startFailed: return .red
         case .idle: return .secondary
         }
     }
@@ -75,6 +75,7 @@ struct RecordingBanner: View {
         case .uploading: return "Sending to Speakr…"
         case .sent: return "Recording sent"
         case .failed: return "Recording not sent"
+        case .startFailed: return "Recording could not start"
         case .idle: return ""
         }
     }

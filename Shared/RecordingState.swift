@@ -16,7 +16,7 @@ nonisolated enum RecordingShared {
 /// What the recorder is doing, as the widget, the Live Activity and the app show it.
 /// Written by the app into the app group; read by the widget extension.
 nonisolated struct RecordingState: Codable, Equatable, Sendable {
-    enum Phase: String, Codable, Sendable { case idle, recording, paused, uploading, sent, failed }
+    enum Phase: String, Codable, Sendable { case idle, recording, paused, uploading, sent, failed, startFailed }
 
     var phase: Phase = .idle
     /// While recording: now minus the seconds already recorded, so a timer view shows the total.

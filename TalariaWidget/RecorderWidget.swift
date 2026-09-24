@@ -80,10 +80,6 @@ struct RecorderWidgetView: View {
                 }
             } else if state.phase == .uploading {
                 Image(systemName: "icloud.and.arrow.up").font(.title2)
-            } else if state.micGranted {
-                Button(intent: StartRecordingIntent()) {
-                    Image(systemName: "record.circle").font(.title2)
-                }
             } else {
                 Link(destination: RecordingShared.recordURL) {
                     Image(systemName: "record.circle").font(.title2)
@@ -127,12 +123,9 @@ struct RecorderButtons: View {
                 Button(intent: StopRecordingIntent()) { label("Stop", "stop.fill") }
             case .uploading:
                 EmptyView()
-            case .idle, .sent, .failed:
-                if state.micGranted {
-                    Button(intent: StartRecordingIntent()) { label("Record", "record.circle") }.tint(.red)
-                } else {
-                    Link(destination: RecordingShared.recordURL) { label("Record", "record.circle") }.tint(.red)
-                }
+            case .idle, .sent, .failed, .startFailed:
+                // iOS refuses to begin recording in the background, so Record opens the app and starts there.
+                Link(destination: RecordingShared.recordURL) { label("Record", "record.circle") }.tint(.red)
             }
         }
         .buttonStyle(.bordered)
@@ -160,7 +153,7 @@ enum RecorderGlyphs {
         case .paused: return "pause.circle"
         case .uploading: return "icloud.and.arrow.up"
         case .sent: return "checkmark.circle.fill"
-        case .failed: return "exclamationmark.triangle.fill"
+        case .failed, .startFailed: return "exclamationmark.triangle.fill"
         case .idle: return "mic.fill"
         }
     }
@@ -170,7 +163,7 @@ enum RecorderGlyphs {
         case .recording: return s.interrupted ? .orange : .red
         case .paused: return .orange
         case .sent: return .green
-        case .failed: return .red
+        case .failed, .startFailed: return .red
         case .uploading, .idle: return .secondary
         }
     }
@@ -182,6 +175,7 @@ enum RecorderGlyphs {
         case .uploading: return "Sending…"
         case .sent: return "Sent to Speakr"
         case .failed: return "Not sent"
+        case .startFailed: return "Couldn't start"
         case .idle: return "Recorder"
         }
     }
@@ -190,8 +184,8 @@ enum RecorderGlyphs {
         switch s.phase {
         case .recording: return s.interrupted ? "Resumes when the call ends" : ""
         case .sent: return s.speakrRecordingId.map { "Recording #\($0) is being transcribed." } ?? "Being transcribed."
-        case .failed: return s.message ?? "The audio is saved on this phone."
-        case .idle: return s.micGranted ? "Tap to record. Stop sends it to Speakr." : "Open Talaria once to allow the microphone."
+        case .failed, .startFailed: return s.message ?? "The audio is saved on this phone."
+        case .idle: return "Tap to record. Stop sends it to Speakr."
         default: return ""
         }
     }

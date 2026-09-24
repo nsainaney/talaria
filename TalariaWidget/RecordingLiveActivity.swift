@@ -99,7 +99,7 @@ enum ActivityGlyphs {
         case .paused: return "pause.circle"
         case .uploading: return "icloud.and.arrow.up"
         case .sent: return "checkmark.circle.fill"
-        case .failed: return "exclamationmark.triangle.fill"
+        case .failed, .startFailed: return "exclamationmark.triangle.fill"
         case .idle: return "mic.fill"
         }
     }
@@ -109,7 +109,7 @@ enum ActivityGlyphs {
         case .recording: return s.interrupted ? .orange : .red
         case .paused: return .orange
         case .sent: return .green
-        case .failed: return .red
+        case .failed, .startFailed: return .red
         case .uploading, .idle: return .secondary
         }
     }
@@ -121,6 +121,7 @@ enum ActivityGlyphs {
         case .uploading: return "Sending to Speakr…"
         case .sent: return "Sent to Speakr"
         case .failed: return "Not sent"
+        case .startFailed: return "Couldn't start"
         case .idle: return "Recorder"
         }
     }
