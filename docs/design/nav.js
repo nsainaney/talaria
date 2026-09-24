@@ -24,7 +24,7 @@ const tabbar = (on) => `<div class="tabbar">${[['Chat', I.sparkles], ['Recorder'
 const menu = `<div class="dim"></div><div class="menu">
   <div class="mi">${I.compose} Rename</div><div class="mi">${I.sparkles} Skills for this chat</div><div class="mi">${I.list} Model · glm-5.3 · medium</div><div class="mi">${I.term} Pin</div><div class="mi danger">${I.x} Delete chat</div></div>`;
 // One inbox: chats and recordings together, newest first, told apart by their icon.
-const searchRow = (label = "All") => `<div class="searchrow"><div class="search">${I.list} Search</div><span class="filter">${I.filter} ${label}</span></div>`;
+const searchRow = (label = "All") => `<div class="searchrow top"><div class="search">${I.list} Search</div><span class="iconbtn">${I.gear}</span><span class="filter">${I.filter} ${label}</span></div>`;
 const inbox = `
   ${searchRow()}
   <div class="sect">Active</div><div class="sess">
@@ -58,13 +58,39 @@ const recDetail = `
     <div class="acts"><span class="b danger">${I.x} Delete</span></div>
   </div>`;
 const C = [
-  phone('1 · Land: Inbox <small>· chats and recordings, newest first</small>', `<div class="nav"><span style="width:22px"></span><div class="title">Talaria</div><div class="group">${I.gear}</div></div>${inbox}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
-  phone('2 · Filter <small>· All, Chats or Recordings</small>', `<div class="nav"><span style="width:22px"></span><div class="title">Talaria</div><div class="group">${I.gear}</div></div>${inboxFiltered}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
+  phone('1 · Land: Inbox <small>· chats and recordings, newest first</small>', `${inbox}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
+  phone('2 · Filter <small>· All, Chats or Recordings</small>', `${inboxFiltered}<div class="fab"><span class="b">${I.compose} New chat</span><span class="b mic">${I.micf}</span></div>`),
   phone('3 · A chat <small>· pushed; back returns to the inbox</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}`),
   phone('4 · Chat title menu <small>· rename, skills, model, pin</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title"><span class="titlemenu">Home lab ${I.chev}</span></div><div class="group">${I.sparkles}</div></div>${chatBody}${composer()}${menu}`),
   phone('5 · A recording <small>· pushed; play, send, delete</small>', `<div class="nav"><span class="back">${I.chev} Inbox</span><div class="title">Recording</div><span style="width:22px"></span></div>${recDetail}`),
   phone('6 · Recorder <small>· the mic button on the inbox</small>', `<div class="rec"><div class="bar"><span class="back">${I.chev} Inbox</span>${I.chev}</div><div class="top"><div class="state"><span class="live">${I.micf}</span>Recording</div><div class="timer">12:34</div></div><div class="note"></div><div class="buttons"><div class="r"><span class="big pause">${I.pause}</span></div><div class="r"><span class="big cancel">${I.x}</span><span class="big done">${I.check}</span></div></div></div>`),
 ];
 const block = (n, title, why, frames) => `<h2 class="v">${n}${title ? " · " + title : ""}</h2><p class="why">${why}</p><div class="gallery">${frames.join('')}</div>`;
+
+// Voice chat: a minimal screen. Your words appear as they are understood; Hermes's reply renders
+// with markdown; one big Pause (mic stops, Hermes waits) and a Stop that returns to the text chat.
+const vTop = (status, cls = '') => `<div class="nav"><span class="back">${I.chev} Home lab</span><div class="title"></div><span style="width:22px"></span></div>
+  <div class="vstatus ${cls}"><span class="vdot"></span>${status}</div>`;
+const vButtons = (paused) => `<div class="vbuttons"><span class="big ${paused ? 'resume' : 'pause'}">${paused ? I.micf : I.pause}</span><span class="big stop">${I.x}</span></div>`;
+const V = [
+  phone('1 · Listening <small>· what is understood, as you speak</small>', `${vTop('Listening', 'listen')}
+    <div class="vbody">
+      <div class="vh">Hermes</div><div class="vtext">The backup ran at 02:00 and finished clean. Anything else on the server?</div>
+      <div class="vh you">You</div><div class="vtext you">Yeah, how much space is left on the big drive and how does that compare to last<span class="caret"></span></div>
+    </div>${vButtons(false)}`),
+  phone('2 · Hermes speaking <small>· the reply, with markdown</small>', `${vTop('Hermes is speaking', 'speak')}
+    <div class="vbody">
+      <div class="vh you">You</div><div class="vtext you">Yeah, how much space is left on the big drive and how does that compare to last month?</div>
+      <div class="vh">Hermes</div><div class="vtext"><p>About <b>700 GB</b> free on the big drive, which is 62% full. Last month it was 55%.</p>
+        <table class="vt"><tr><th>Drive</th><th>Used</th><th>Free</th></tr><tr><td>space</td><td>62%</td><td>700 GB</td></tr><tr><td>flame</td><td>41%</td><td>1.1 TB</td></tr><tr><td>wolf</td><td>78%</td><td>390 GB</td></tr></table>
+        <p>Most of the growth is Speakr's audio. Want me to set a reminder when it passes 75%?</p></div>
+    </div>${vButtons(false)}`),
+  phone('3 · Paused <small>· mic off, Hermes waits</small>', `${vTop('Paused', 'paused')}
+    <div class="vbody dim2">
+      <div class="vh you">You</div><div class="vtext you">Yeah, how much space is left on the big drive and how does that compare to last month?</div>
+      <div class="vh">Hermes</div><div class="vtext"><p>About <b>700 GB</b> free on the big drive, which is 62% full. Last month it was 55%.</p><p>Most of the growth is Speakr's audio. Want me to set a reminder when it passes 75%?</p></div>
+    </div>${vButtons(true)}`),
+];
 document.getElementById('study').innerHTML =
+  block('Modes', '', 'Three ways to use Talaria. <b>Chat</b>: the text composer, with the mic in it for dictating a message. <b>Voice chat</b>: the composer\'s mic held, or the waveform button in the chat title bar, opens the voice screen below; Stop returns to the text chat with the exchange kept. <b>Meeting recording</b>: the mic on the inbox, the recorder screen, sent to Speakr. Chat and voice chat share a session; a recording is its own inbox row.', V) +
   block('Inbox', '', 'One list for everything you did with Talaria: chats and recordings together, newest first, with the icon telling them apart (sparkles for a chat, red mic for a recording). Anything still going on, a running chat or a live recording, sits at the top under Active. The filter next to search narrows the list to chats or recordings. Every row pushes a page with a real back button; the chat title opens a menu for rename, skills, model and pin. The two buttons at the bottom start a chat or a recording.', C);

@@ -83,3 +83,31 @@
 .filter .icon { width: 16px; height: 16px; color: var(--accent); }
 .menu.filtermenu { top: 122px; left: auto; right: 14px; transform: none; width: 180px; }
 .menu .mi.on { color: var(--accent); } .menu .mi.on .icon:last-child { margin-left: auto; color: var(--accent); }
+
+/* voice chat */
+.vstatus { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); padding: 2px 0 8px; }
+.vdot { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); }
+.vstatus.listen .vdot { background: var(--rec); box-shadow: 0 0 0 4px rgba(255,69,58,.18); } .vstatus.listen { color: var(--rec); }
+.vstatus.speak .vdot { background: var(--accent); box-shadow: 0 0 0 4px rgba(62,99,240,.18); } .vstatus.speak { color: var(--accent); }
+.vbody { flex: 1; min-height: 0; overflow: hidden; padding: 6px 20px; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
+.vbody.dim2 { opacity: .55; }
+.vh { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 14px; }
+.vh.you { color: var(--accent); }
+.vtext { font-size: 19px; line-height: 1.4; }
+.vtext p { margin: 0 0 8px; } .vtext p:last-child { margin: 0; }
+.vtext.you { color: var(--accent); }
+.caret { display: inline-block; width: 2px; height: 1em; background: var(--accent); vertical-align: -2px; margin-left: 2px; }
+.vt { border-collapse: collapse; width: 100%; font-size: 14px; margin: 6px 0 10px; }
+.vt th, .vt td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); } .vt th { font-weight: 600; color: var(--muted); font-size: 12px; }
+.vbuttons { display: flex; justify-content: center; align-items: center; gap: 40px; padding: 18px 0 36px; }
+.vbuttons .big { width: 104px; height: 104px; }
+.vbuttons .big.pause { background: linear-gradient(#ffb340, #ff9500); }
+.vbuttons .big.resume { background: var(--rec); }
+.vbuttons .big.stop { width: 72px; height: 72px; background: var(--glass); color: var(--muted); border: 1px solid var(--line); border-radius: 20px; }
+.vbuttons .big.stop .icon { width: 30px; height: 30px; }
+
+.searchrow.top { margin-top: 4px; }
+.iconbtn { width: 36px; height: 36px; border-radius: 12px; background: var(--glass); border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
+.iconbtn .icon { width: 18px; height: 18px; }
+.filter { padding: 8px 9px; }
+.menu.filtermenu { top: 96px; }
