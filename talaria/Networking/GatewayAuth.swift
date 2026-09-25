@@ -130,8 +130,8 @@ struct GatewayAuth {
         for c in jar.cookies(for: baseURL) ?? [] { jar.deleteCookie(c) }
     }
 
-    func webSocketURL(ticket: String) -> URL {
-        var comps = URLComponents(url: baseURL.appendingPathComponent("/api/ws"), resolvingAgainstBaseURL: false)!
+    func webSocketURL(path: String = "/api/ws", ticket: String) -> URL {
+        var comps = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         comps.scheme = comps.scheme == "https" ? "wss" : "ws"
         comps.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
         return comps.url!

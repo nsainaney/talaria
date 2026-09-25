@@ -296,7 +296,7 @@ final class VoiceController: VoiceChatCommands {
         workingCueTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(15))
             guard !Task.isCancelled, let self, self.state == .thinking, !self.splitter.receivedAny else { return }
-            self.say("Still working on it.")
+            self.sayNow("Still working on it.")
         }
     }
 
@@ -319,16 +319,24 @@ final class VoiceController: VoiceChatCommands {
                 for chunk in splitter.flush() { say(chunk) }
             }
             splitter = SpeechSentenceSplitter()
+            speaker.finish()
             if !speaker.isSpeaking, state == .thinking { state = .listening }
         case .requestsChanged:
             promptForPendingRequest()
         }
     }
 
+    /// One more sentence of the reply in progress; `speaker.finish()` follows the last one.
     private func say(_ text: String) {
         state = .speaking
         recentlySpoken.append((Date(), Set(Self.words(text))))
         speaker.speak(text)
+    }
+
+    /// A complete utterance of its own (a cue or a question), not part of a streamed reply.
+    private func sayNow(_ text: String) {
+        say(text)
+        speaker.finish()
     }
 
     /// True when most of the words were spoken by the phone in the last 20 seconds: its own
@@ -370,12 +378,12 @@ final class VoiceController: VoiceChatCommands {
             answering = .approval
             let what = !a.description.isEmpty ? a.description : (!a.command.isEmpty ? a.command : (a.toolName ?? "a command"))
             let choices = a.choices.compactMap { Self.spokenChoice[$0] }.joined(separator: ", ")
-            say("Hermes needs permission to run \(SpeechText.brief(what)). Say \(choices).")
+            sayNow("Hermes needs permission to run \(SpeechText.brief(what)). Say \(choices).")
         } else if let c = chat.pendingClarify {
             answering = .clarify
             var q = c.question
             if !c.choices.isEmpty { q += ". The options are: " + c.choices.joined(separator: ", ") + "." }
-            say(SpeechText.brief(q, limit: 400))
+            sayNow(SpeechText.brief(q, limit: 400))
         } else if answering != .none {
             // Answered on screen while we were still asking.
             answering = .none
@@ -394,12 +402,12 @@ final class VoiceController: VoiceChatCommands {
         else if deny && !allow { choice = "deny" }
         else if allow && !deny { choice = a.choices.contains("once") ? "once" : a.choices.first }
         guard let choice else {
-            say("I didn't catch that. Say \(a.choices.compactMap { Self.spokenChoice[$0] }.joined(separator: ", ")).")
+            sayNow("I didn't catch that. Say \(a.choices.compactMap { Self.spokenChoice[$0] }.joined(separator: ", ")).")
             return
         }
         answering = .none
         chat.respond(to: a, choice: choice)
-        say(choice == "deny" ? "Denied." : "Allowed.")
+        sayNow(choice == "deny" ? "Denied." : "Allowed.")
     }
 
     private func answerClarify(_ spoken: String) {
@@ -409,7 +417,7 @@ final class VoiceController: VoiceChatCommands {
             let s = spoken.lowercased()
             let hits = c.choices.filter { let o = $0.lowercased(); return s.contains(o) || o.contains(s) }
             guard hits.count == 1 else {
-                say("Which one: " + c.choices.joined(separator: ", ") + "?")
+                sayNow("Which one: " + c.choices.joined(separator: ", ") + "?")
                 return
             }
             answer = hits[0]
