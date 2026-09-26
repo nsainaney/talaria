@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Talaria · Tasks</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="base.css?v=1790449392"><link rel="stylesheet" href="glass.css?v=1790449392"><link rel="stylesheet" href="nav.css?v=1790449392"><link rel="stylesheet" href="tasks.css?v=1790449392"></head><body>
+<div class="topbar"><h1>Tasks</h1><p>Two lists: Triage (what came in + the Hermes backlog) and In progress. Me, Agent, or Ignore.</p><nav><a href="index.html">All</a><a href="glass.html">Glass</a><a href="nav.html">Navigation</a><a href="tasks.html" class="on">Tasks</a></nav></div>
+<div class="study" id="tasks"></div>
+<div class="ref">
+<h3>How it maps</h3>
+<table>
+<tr><th>In Talaria</th><th>Where it lives</th><th>Notes</th></tr>
+<tr><td>Triage list</td><td>context engine, a query: <code>candidates</code> without a <code>decisions</code> row, plus kanban cards in <code>ready</code>/<code>todo</code>/<code>scheduled</code> from the mirror</td><td>Served by the read API as <code>/triage</code>, newest first; pushed over MQTT when a candidate, decision or card changes. Talaria keeps a local copy for display only; the record is on prometheus.</td></tr>
+<tr><td>Scan</td><td>context engine: <code>checkpoints(source, updated_at)</code></td><td>One tap, no choices. Everything with <code>updated_at</code> past the source's checkpoint is screened, one Restate workflow per item version, so a second tap or an overlapping range never screens anything twice. The checkpoint moves when the scan finishes. First run looks back 14 days (a setting).</td></tr>
+<tr><td>Triage candidates</td><td>context engine: <code>candidates</code> rows + kanban cards in <code>triage</code></td><td>The screener (a Hermes profile run per item version from the ingest pipeline) writes candidates for mail, iMessage and meetings with a why and a suggested day; GitHub and kanban candidates come from rules. Voice triage reads the why.</td></tr>
+<tr><td>Me / Agent / Ignore</td><td>context engine: <code>decisions</code> rows</td><td>The audit trail: what you decided, when, with the target reminder id or card id, or "ignore". Ignored items are not shown again unless they change.</td></tr>
+<tr><td>A scheduled item</td><td>Apple Reminders, created on the phone with EventKit</td><td>Due date, optional time, list, URL = source link, <code>#source</code> in the notes (tags are invisible to EventKit). Check it off in Reminders or in Days.</td></tr>
+<tr><td>Days</td><td>Reminders read on the phone (EventKit), joined to decisions and cards</td><td>Talaria reads Reminders live on the device, so Days never waits for the titan bridge. The Hermes state on a row comes from the card.</td></tr>
+<tr><td>Hand to Hermes</td><td>Reminder moved to the Hermes list; kanban card <code>ready</code>, assignee = profile</td><td>Talaria creates the card through the dashboard API with <code>idempotency_key = reminder:&lt;id&gt;</code>, the reminder's notes and URL as the body. Moving a reminder into the Hermes list from the Reminders app does the same, via the context engine noticing it.</td></tr>
+<tr><td>Agent</td><td>kanban card in <code>triage</code>, assignee unset</td><td>The dispatcher never touches <code>triage</code>, so the backlog is inert until you start something. The card body is the item text and links; the candidate's why goes in a comment.</td></tr>
+<tr><td>Start</td><td>a Talaria chat on the card running the <code>task-grill</code> skill; the card's <code>session_id</code> points at it</td><td>The skill reads before it asks, one question at a time, until it can fill title, body (approach, verify), assignee, links. It answers with the card as structured output.</td></tr>
+<tr><td>Proceed</td><td><code>PATCH</code> title, body, assignee, then <code>status=ready</code></td><td>The gateway dispatcher claims it by priority then age within <code>max_in_progress</code>. The write is Talaria's, on your tap, not the model's.</td></tr>
+<tr><td>Hermes: In progress</td><td>kanban <code>running</code> and <code>blocked</code></td><td>Blocked with <code>needs_input</code> shows the question and a reply field; the reply is a comment plus unblock.</td></tr>
+<tr><td>Hermes backlog</td><td>kanban <code>triage</code> (not started) and <code>todo</code> (waiting on a parent)</td><td>Todo cards were discussed already and start by themselves when the parent is done.</td></tr>
+<tr><td>Done</td><td>kanban <code>done</code>; the reminder is completed</td><td>Talaria completes the reminder when the card is done and writes the PR link into its notes.</td></tr>
+<tr><td>Observed history</td><td>context engine: <code>versions</code> rows</td><td>Every upstream change per item version (a due date moved in Reminders, an issue relabelled). Coarse: one row per poll window.</td></tr>
+<tr><td>Live updates</td><td>MQTT <code>hermes/events/…</code> via an SSE route, plus the kanban events WebSocket</td><td>Counts on the inbox row and the lists refresh from these.</td></tr>
+</table>
+<h3>The link in a reminder (Me)</h3>
+<p>One URL field, so it holds the source. The notes carry an excerpt, the source name, <code>#source</code>, and a <code>talaria://item/&lt;id&gt;</code> link that opens the item in Talaria with its why, decisions and trail. The context store already records a URL for most sources.</p>
+<table>
+<tr><th>Source</th><th>Reminder URL</th><th>Where it comes from</th></tr>
+<tr><td>GitHub issue or PR</td><td>the issue's <code>html_url</code></td><td>Stored on the item; opens the GitHub app.</td></tr>
+<tr><td>Mail (Office 365)</td><td>Graph <code>webLink</code></td><td>Stored on the item; opens Outlook (universal link) or the web. Apple Mail has no usable per-message link on iOS.</td></tr>
+<tr><td>iMessage</td><td><code>sms:&lt;address&gt;</code> for the chat</td><td>Not stored today (ingester writes none). Messages cannot open a single message, so the notes quote the message and its time.</td></tr>
+<tr><td>Meeting (Speakr)</td><td><code>talaria://recording/&lt;id&gt;?t=1900</code></td><td>Opens the recording in Talaria at the moment; the Speakr link (stored, LAN only) goes in the notes.</td></tr>
+<tr><td>Chat (Hermes)</td><td><code>talaria://chat/&lt;session&gt;</code></td><td>The session id is on the card and on the candidate.</td></tr>
+<tr><td>Kanban card</td><td><code>talaria://task/&lt;id&gt;</code></td><td>Not stored today; built from the card id.</td></tr>
+<tr><td>Calendar event</td><td><code>htmlLink</code> / <code>webLink</code></td><td>Stored on the item.</td></tr>
+<tr><td>Obsidian note</td><td><code>obsidian://open?vault=…&amp;file=…</code></td><td>Stored on the item.</td></tr>
+</table>
+<h3>How Hermes emits a card</h3>
+<p>Two ways, both plain text in the reply so every other client still sees something sensible.</p>
+<table>
+<tr><th>Form</th><th>What Hermes writes</th><th>What Talaria does</th></tr>
+<tr><td>A link to something that exists</td><td>the entity's URL on its own line: <code>https://github.com/nsainaney/talaria/issues/12</code>, <code>talaria://task/t_3f9a</code>, <code>talaria://reminder/&lt;id&gt;</code>, or <code>context://kanban:card:default:t_3f9a</code></td><td>Unfurls it into the card from the context store (issue, card) or EventKit (reminder), and keeps it live. A link inside a sentence becomes a pill. Other clients see the link.</td></tr>
+<tr><td>Something that does not exist yet</td><td><pre style="margin:4px 0;font-size:12px">```card
+type: task            # task | reminder | issue
+title: Fix Speakr upload 401 after token refresh
+assignee: coder-vm
+body: |
+  Retry with the refreshed token in SpeakrClient.upload; …
+verify: build, then upload with a stale token
+closes: https://github.com/nsainaney/talaria/issues/12
+```</pre> for a reminder: <code>due: 2026-10-01</code>, <code>time: 09:00</code> (optional), <code>list: Admin</code>, <code>url: …</code>, <code>tags: [mail]</code></td><td>Renders a dashed proposed card. The one strong action creates it: Proceed files the card and sets it ready; Add to Reminders writes it with EventKit; for an issue, Create opens it on GitHub. Edit opens the fields. Other clients see the YAML, which is readable.</td></tr>
+</table>
+<p>Fields are the entity's own: an issue has repo, number, state, labels, assignee; a task has id, status, assignee, board, parents, run; a reminder has list, due, time, completed, url, notes. Talaria never invents state: the card always reads back from the store, so a wrong field in the YAML shows up as a difference, not as a fact.</p>
+<p>Talaria needs a bearer-authenticated listener for the context engine on the WireGuard address (nix-config work); the kanban is reached through the dashboard it already signs into. The Apple bridge on titan stays read-only; Talaria writes Reminders itself.</p>
+</div>
+<script src="screens.js?v=1790449392"></script><script src="nav.js?v=1790449392"></script><script src="tasks.js?v=1790449392"></script></body></html>
