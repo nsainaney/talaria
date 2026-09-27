@@ -29,6 +29,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Tasks you triage as yours become reminders with a link back to their source.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to send to Hermes.</string>
 	<key>NSAppTransportSecurity</key>

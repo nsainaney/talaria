@@ -7,6 +7,9 @@ enum InboxFilter: String, CaseIterable {
 enum InboxDestination: Hashable {
     case chat(HermesSession)
     case newChat(voice: Bool)
+    case tasks
+    case taskItem(TriageEntry)
+    case taskCard(KanbanCard)
 }
 
 /// The root: one list of chats and recordings, newest first, with what is still going on at the top.
@@ -17,6 +20,7 @@ struct InboxView: View {
     @State private var filter: InboxFilter = .all
     @State private var expanded: String?
     @State private var showSettings = false
+    @State private var confirmCloseDelete: HermesSession?
     private let library = RecordingLibrary.shared
     private let recorder = BackgroundRecorder.shared
 
@@ -40,6 +44,14 @@ struct InboxView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if let e = model.sessionsError {
+                HStack(spacing: 8) {
+                    Text(e).font(.footnote).foregroundStyle(.red).lineLimit(2)
+                    Spacer()
+                    Button { model.sessionsError = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                }
+                .padding(.horizontal, 20).padding(.bottom, 6)
+            }
             list
         }
         .background(GlassBackground())
@@ -154,6 +166,14 @@ struct InboxView: View {
                                        description: Text(query.isEmpty ? "Start a chat or a recording below." : "Try another search."))
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
+            if query.isEmpty, filter == .all {
+                Section {
+                    tasksRow
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 3, leading: 16, bottom: 3, trailing: 16))
+                }
+            }
             ForEach(sections, id: \.title) { section in
                 Section {
                     ForEach(section.rows) { e in
@@ -175,6 +195,36 @@ struct InboxView: View {
             library.refresh(keeping: recorder.state.fileName)
         }
         .overlay { if model.isLoadingSessions && model.sessions.isEmpty { ProgressView() } }
+        .task { await model.tasks.refresh() }
+    }
+
+    /// One row for Tasks: what needs triage, what needs you, what Hermes is doing.
+    private var tasksRow: some View {
+        let t = model.tasks
+        var bits: [String] = []
+        if t.triageCount > 0 { bits.append("\(t.triageCount) to triage") }
+        if t.needsYouCount > 0 { bits.append("\(t.needsYouCount) need\(t.needsYouCount == 1 ? "s" : "") you") }
+        let running = t.inProgress.filter { $0.status == "running" }.count
+        if running > 0 { bits.append("Hermes on \(running)") }
+        if bits.isEmpty { bits.append(t.backlog.isEmpty ? "Nothing waiting" : "\(t.backlog.count) in the backlog") }
+        return Button { path.append(InboxDestination.tasks) } label: {
+            HStack(spacing: 10) {
+                IconBadge(symbol: "checklist", color: Theme.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tasks").font(.body.weight(.medium))
+                    Text(bits.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                if t.triageCount > 0 { StatusBadge(text: "\(t.triageCount)", color: .orange) }
+                else if t.needsYouCount > 0 { StatusBadge(text: "reply", color: .orange) }
+                else { Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+            }
+            .padding(10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background((t.triageCount > 0 || t.needsYouCount > 0) ? Theme.accent.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: Theme.small, style: .continuous))
+        .glass(Theme.small)
     }
 
     @ViewBuilder private func row(_ e: Entry) -> some View {
@@ -197,6 +247,15 @@ struct InboxView: View {
                 Spacer(minLength: 6)
                 if active {
                     StatusBadge(text: "running", color: Theme.accent)
+                } else if model.isLiveElsewhere(s) {
+                    // Open in another client (dashboard, TUI, a gateway). Delete needs a close first.
+                    HStack(spacing: 4) {
+                        Image(systemName: "desktopcomputer").font(.caption2)
+                        Text("open").font(.caption2.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 } else if let d = s.startedDate {
                     Text(Self.when(d)).font(.caption).foregroundStyle(.secondary)
                 }
@@ -208,7 +267,14 @@ struct InboxView: View {
         .background(active ? Theme.accent.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: Theme.small, style: .continuous))
         .glass(Theme.small)
         .swipeActions(edge: .trailing) {
-            Button(role: .destructive) { Task { await model.delete(s) } } label: { Label("Delete", systemImage: "trash") }
+            Button(role: .destructive) {
+                if model.isLiveElsewhere(s) { confirmCloseDelete = s } else { Task { await model.delete(s) } }
+            } label: { Label("Delete", systemImage: "trash") }
+        }
+        .confirmationDialog("This chat is open in another client", isPresented: Binding(get: { confirmCloseDelete?.id == s.id }, set: { if !$0 { confirmCloseDelete = nil } }), titleVisibility: .visible) {
+            Button("Close it there and delete", role: .destructive) { Task { await model.delete(s) } }
+        } message: {
+            Text("The dashboard, the TUI or a gateway has it open. Deleting closes it for them too.")
         }
         .swipeActions(edge: .leading) {
             Button { model.pins.toggleSession(s.id) } label: {
@@ -220,7 +286,9 @@ struct InboxView: View {
             Button { model.pins.toggleSession(s.id) } label: {
                 Label(model.pins.isSessionPinned(s.id) ? "Unpin" : "Pin", systemImage: model.pins.isSessionPinned(s.id) ? "pin.slash" : "pin")
             }
-            Button(role: .destructive) { Task { await model.delete(s) } } label: { Label("Delete", systemImage: "trash") }
+            Button(role: .destructive) {
+                if model.isLiveElsewhere(s) { confirmCloseDelete = s } else { Task { await model.delete(s) } }
+            } label: { Label("Delete", systemImage: "trash") }
         }
     }
 

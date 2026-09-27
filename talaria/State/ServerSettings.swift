@@ -15,6 +15,7 @@ final class ServerSettings {
     private static let bargeInKey = "talaria.voiceBargeIn"
     private static let speakrURLKey = "speakr.url"
     private static let speakrTokenKey = "speakr.token"
+    private static let kanbanBoardKey = "kanban.board"
 
     var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: Self.urlKey) } }
     var username: String { didSet { UserDefaults.standard.set(username, forKey: Self.userKey) } }
@@ -33,6 +34,8 @@ final class ServerSettings {
     /// Speakr (meeting transcription) server; the API token lives in the Keychain.
     var speakrURL: String { didSet { UserDefaults.standard.set(speakrURL, forKey: Self.speakrURLKey) } }
     var speakrToken: String { didSet { Keychain.set(speakrToken, for: Self.speakrTokenKey) } }
+    /// Kanban board slug; empty means the dashboard's current board.
+    var kanbanBoard: String { didSet { UserDefaults.standard.set(kanbanBoard, forKey: Self.kanbanBoardKey) } }
 
     init() {
         serverURL = UserDefaults.standard.string(forKey: Self.urlKey) ?? "http://127.0.0.1:9119"
@@ -45,7 +48,11 @@ final class ServerSettings {
         voiceBargeIn = UserDefaults.standard.object(forKey: Self.bargeInKey) as? Bool ?? true
         speakrURL = UserDefaults.standard.string(forKey: Self.speakrURLKey) ?? ""
         speakrToken = Keychain.get(Self.speakrTokenKey) ?? ""
+        kanbanBoard = UserDefaults.standard.string(forKey: Self.kanbanBoardKey) ?? ""
     }
+
+    /// The context engine, reached through the dashboard's `talaria` plugin with the same sign-in.
+    var context: ContextClient? { auth.map(ContextClient.init(auth:)) }
 
     var speakr: SpeakrClient? {
         guard let base = Self.normalize(speakrURL), !speakrToken.isEmpty else { return nil }

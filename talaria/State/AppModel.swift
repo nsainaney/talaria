@@ -9,8 +9,13 @@ final class AppModel {
     let chat = ChatStore()
     let skills: SkillsStore
     let voice: VoiceController
+    let tasks: TasksStore
 
     var sessions: [HermesSession] = []
+    /// Sessions live in the gateway process right now (open in the dashboard, the TUI, a
+    /// messaging gateway, a worker), keyed by stored id: their live id and status. The server
+    /// refuses to delete these until they are closed.
+    var liveElsewhere: [String: (liveId: String, status: String)] = [:]
     var sessionsError: String?
     var isLoadingSessions = false
     var serverVersion: String?
@@ -20,6 +25,7 @@ final class AppModel {
     init() {
         skills = SkillsStore(pins: pins)
         voice = VoiceController(chat: chat, skills: skills, settings: settings)
+        tasks = TasksStore(settings: settings)
         chat.client = gateway
         BackgroundRecorder.shared.willStart = { [weak self] in self?.voice.stop() }
         VoiceChatIntentHost.commands = voice
@@ -79,10 +85,29 @@ final class AppModel {
         do {
             let r = try await gateway.request("session.list", ["limit": 100], timeout: 60)
             sessions = (r["sessions"] as? [[String: Any]] ?? []).compactMap(HermesSession.init(row:))
+            if let a = try? await gateway.request("session.active_list", [:], timeout: 30) {
+                var live: [String: (liveId: String, status: String)] = [:]
+                for row in a["sessions"] as? [[String: Any]] ?? [] {
+                    guard let key = row["session_key"] as? String, let id = row["id"] as? String else { continue }
+                    live[key] = (id, row["status"] as? String ?? "live")
+                }
+                liveElsewhere = live
+            }
             sessionsError = nil
         } catch {
             sessionsError = error.localizedDescription
         }
+    }
+
+    /// A new chat that opens with a message already sent (Start on a card, Why on an ignore).
+    /// Returns the session so the caller can push it; nil when the send failed.
+    func startChat(_ text: String, file: (name: String, text: String)?, title: String?) async -> HermesSession? {
+        voice.stop()
+        chat.startNewChat()
+        await chat.send(text, files: file.map { [$0] } ?? [], skills: skills)
+        guard let s = chat.session else { return nil }
+        if let title, !title.isEmpty { await rename(s, to: title) }
+        return chat.session ?? s
     }
 
     func rename(_ s: HermesSession, to title: String) async {
@@ -97,14 +122,39 @@ final class AppModel {
 
     func delete(_ s: HermesSession) async {
         do {
-            // A live session must be closed before the store lets it go.
-            _ = try? await gateway.request("session.close", ["session_id": s.liveId], timeout: 30)
-            _ = try await gateway.request("session.delete", ["session_id": s.id], timeout: 30)
-            sessions.removeAll { $0.id == s.id }
-            chat.forget(sessionLiveId: s.liveId)
-            if chat.session?.id == s.id { chat.startNewChat() }
+            try await deleteRow(s)
+            // A compacted conversation is a chain of rows; the list shows the newest with the
+            // root's start time. Deleting one link exposes the previous one under the same start
+            // time, so keep deleting until nothing with that start time comes back.
+            var last = s
+            for _ in 0..<60 {
+                await refreshSessions()
+                guard let start = last.startedAt,
+                      let ghost = sessions.first(where: { $0.id != last.id && $0.startedAt == start && $0.source == last.source }) else { break }
+                try await deleteRow(ghost)
+                last = ghost
+            }
+            sessionsError = nil
         } catch {
-            sessionsError = error.localizedDescription
+            sessionsError = "Could not delete: " + error.localizedDescription
         }
+    }
+
+    /// Live in another client (not the chat open here).
+    func isLiveElsewhere(_ s: HermesSession) -> Bool {
+        guard let live = liveElsewhere[s.id] else { return false }
+        return live.liveId != chat.session?.liveId
+    }
+
+    private func deleteRow(_ s: HermesSession) async throws {
+        // A live session must be closed before the store lets it go; use the id the gateway
+        // knows it by, which is not the stored id when another client opened it.
+        let liveId = liveElsewhere[s.id]?.liveId ?? s.liveId
+        _ = try? await gateway.request("session.close", ["session_id": liveId], timeout: 30)
+        _ = try await gateway.request("session.delete", ["session_id": s.id], timeout: 30)
+        sessions.removeAll { $0.id == s.id }
+        liveElsewhere[s.id] = nil
+        chat.forget(sessionLiveId: s.liveId)
+        if chat.session?.id == s.id { chat.startNewChat() }
     }
 }

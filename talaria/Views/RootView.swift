@@ -16,6 +16,9 @@ struct RootView: View {
                     switch dest {
                     case .chat(let s): ChatScreen(session: s, startVoice: false)
                     case .newChat(let voice): ChatScreen(session: nil, startVoice: voice)
+                    case .tasks: TasksView(path: $path)
+                    case .taskItem(let e): TaskItemView(path: $path, entry: e)
+                    case .taskCard(let c): TaskCardView(path: $path, card: c)
                     }
                 }
         }
@@ -51,6 +54,32 @@ struct RootView: View {
                 if recorder.state.isActive { model.showRecorder = true; return }
                 model.showRecorder = false
                 openNewChat(voice: true)
+            case "task":
+                // talaria://task/<board>/<id> or talaria://task/<id>: the card, refreshed from the board.
+                let parts = url.pathComponents.filter { $0 != "/" }
+                guard let id = parts.last else { return }
+                let board = parts.count >= 2 ? parts[0] : model.settings.kanbanBoard
+                Task {
+                    if let auth = model.settings.auth, let d = try? await auth.kanbanTask(id, board: board.isEmpty ? nil : board) {
+                        path = NavigationPath()
+                        path.append(InboxDestination.tasks)
+                        path.append(InboxDestination.taskCard(d.card))
+                    }
+                }
+            case "chat":
+                guard let id = url.pathComponents.filter({ $0 != "/" }).first else { return }
+                let s = model.sessions.first { $0.id == id || $0.liveId == id } ?? HermesSession(id: id)
+                path = NavigationPath()
+                path.append(InboxDestination.chat(s))
+            case "item":
+                // talaria://item/<context id>: the item, if it is still waiting for triage; else the Tasks page.
+                let id = url.pathComponents.filter { $0 != "/" }.joined(separator: "/").removingPercentEncoding ?? ""
+                path = NavigationPath()
+                path.append(InboxDestination.tasks)
+                if let e = model.tasks.new.first(where: { $0.id == id }) { path.append(InboxDestination.taskItem(e)) }
+            case "tasks":
+                path = NavigationPath()
+                path.append(InboxDestination.tasks)
             default:
                 break
             }

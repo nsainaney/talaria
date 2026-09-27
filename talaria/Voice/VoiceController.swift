@@ -63,6 +63,7 @@ final class VoiceController: VoiceChatCommands {
         recognizer.onText = { [weak self] in self?.heard($0) }
         recognizer.onError = { [weak self] in self?.error = $0.localizedDescription }
         recognizer.onLevel = { [weak self] in self?.micLevel = $0 }
+        recognizer.onMutedSpeech = { [weak self] started in self?.spokenOver(started) }
         speaker.onFinished = { [weak self] in self?.finishedSpeaking() }
         chat.signal = { [weak self] in self?.handle($0) }
     }
@@ -190,16 +191,11 @@ final class VoiceController: VoiceChatCommands {
         guard !isPaused else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != transcript else { return }
-        if speaker.isSpeaking, !speaker.isPreparing, !settings.voiceBargeIn {
-            return // mic ignored while Hermes talks; the utterance is reset when it finishes
-        }
+        // The input is muted inside the voice-processing unit while the phone talks, so nothing
+        // arrives here during a reply; anything that still does is dropped rather than trusted.
+        if speaker.isSpeaking { return }
         if isEcho(trimmed) { return }
         transcript = trimmed
-        if state == .speaking, !speaker.isPreparing, Self.wordCount(trimmed) >= 2 {
-            // Barge-in: stop talking at once and drop the rest of this reply.
-            interruptReply()
-            state = .listening
-        }
         silenceTask?.cancel()
         let pause = endOfUtterance
         silenceTask = Task { [weak self, unfinishedGrace] in
@@ -214,17 +210,20 @@ final class VoiceController: VoiceChatCommands {
         }
     }
 
+    /// The voice-processing unit heard the person start talking while the phone was talking.
+    /// With "Listen while Hermes speaks" on, that is the barge-in: stop the reply and open the mic.
+    /// Off, the Quiet button is the only way to cut Hermes off.
+    private func spokenOver(_ started: Bool) {
+        guard started, settings.voiceBargeIn, state == .speaking, !speaker.isPreparing else { return }
+        interruptReply()
+        finishedSpeaking()
+    }
+
     private func utteranceEnded() {
         let text = transcript
         transcript = ""
         recognizer.nextUtterance()
         guard !text.isEmpty, !isEcho(text) else { return }
-        if speaker.isSpeaking {
-            // Anything said while Hermes talks ends the reply, even a single word.
-            interruptReply()
-            finishedSpeaking()
-            if Self.isStopWord(text) { return }
-        }
         switch answering {
         case .approval: answerApproval(text)
         case .clarify: answerClarify(text)
@@ -356,14 +355,13 @@ final class VoiceController: VoiceChatCommands {
     /// Speaking, but the audio has not arrived from the server yet.
     var isPreparingVoice: Bool { state == .speaking && speaker.isPreparing }
 
+    /// The reply's last sample has played back through the hardware (see `HermesSpeaker`), and the
+    /// input is open again. Start a fresh utterance so the recognizer begins from silence.
     private func finishedSpeaking() {
         guard state == .speaking else { return }
-        if !settings.voiceBargeIn {
-            // Drop whatever the mic picked up while the phone was talking.
-            silenceTask?.cancel()
-            transcript = ""
-            recognizer.nextUtterance()
-        }
+        silenceTask?.cancel()
+        transcript = ""
+        recognizer.nextUtterance()
         state = chat.isRunning ? .thinking : .listening
     }
 

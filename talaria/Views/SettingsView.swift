@@ -8,6 +8,8 @@ struct SettingsView: View {
     @State private var busy = false
     @State private var speakrStatus: String?
     @State private var speakrBusy = false
+    @State private var contextStatus: String?
+    @State private var contextBusy = false
     @AppStorage(Speaker.voiceKey) private var voiceId = ""
 
     var body: some View {
@@ -64,6 +66,23 @@ struct SettingsView: View {
                     Text("Speakr (meeting recordings)")
                 } footer: {
                     Text("Recordings from the Recorder widget and meetings are uploaded here for transcription and summary. Create the token in Speakr under your account's API tokens; it is kept in the Keychain.")
+                }
+                Section {
+                    TextField("Kanban board (blank: current)", text: $settings.kanbanBoard)
+                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    Button {
+                        Task { await testContext() }
+                    } label: {
+                        HStack { Text("Test tasks"); Spacer(); if contextBusy { ProgressView() } }
+                    }
+                    .disabled(contextBusy || settings.context == nil)
+                    if let contextStatus {
+                        Text(contextStatus).font(.footnote).foregroundStyle(contextStatus.hasPrefix("Connected") ? .green : .red)
+                    }
+                } header: {
+                    Text("Tasks")
+                } footer: {
+                    Text("The triage list comes from the hermes-context engine through the dashboard's talaria plugin, with the sign-in above: what arrived in mail, iMessage, meetings and GitHub, screened for things to do. Cards come from the kanban plugin.")
                 }
                 Section {
                     Toggle("Voice mode", isOn: $settings.voiceEnabled)
@@ -127,6 +146,20 @@ struct SettingsView: View {
             speakrStatus = "\(e.localizedDescription) (URLError \(e.code.rawValue))"
         } catch {
             speakrStatus = error.localizedDescription
+        }
+    }
+
+    private func testContext() async {
+        guard let client = model.settings.context else { return }
+        contextBusy = true
+        defer { contextBusy = false }
+        do {
+            let t = try await client.triage()
+            contextStatus = "Connected · \(t.new.count) to triage · \(t.backlog.count) in the backlog"
+        } catch let e as URLError {
+            contextStatus = "\(e.localizedDescription) (URLError \(e.code.rawValue))"
+        } catch {
+            contextStatus = error.localizedDescription
         }
     }
 

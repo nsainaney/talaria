@@ -13,8 +13,14 @@ import os
 @MainActor
 final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     private(set) var isSpeaking = false
-    /// True while fetching or synthesising and nothing is audible yet.
-    var isPreparing: Bool { isSpeaking && !isPlaying && !fallback.isSpeaking }
+    /// True before the first audio of a reply is audible. Gaps between sentences later in the
+    /// reply are still speaking: the reply is not over until `finish()` and the last buffer has
+    /// played back, so the microphone gate must stay closed across them.
+    var isPreparing: Bool { isSpeaking && !heardAny && !isPlaying && !fallback.isSpeaking }
+    /// Something of this reply has reached the speaker.
+    private var heardAny = false
+    /// `finish()` was called: no more sentences are coming for this reply.
+    private var replyFinished = false
     var onFinished: (() -> Void)?
     /// Resolved at call time so a settings change applies to the next sentence.
     var auth: () -> GatewayAuth? = { nil }
@@ -62,7 +68,20 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     }
 
     func speak(_ text: String) {
+        if !isSpeaking {
+            heardAny = false
+            replyFinished = false
+            output?.setPhoneTalking(true)
+        }
         isSpeaking = true
+        // A reply whose end never gets signalled (chat error mid-turn) must not leave the state
+        // stuck on speaking: treat a long quiet spell as the end.
+        idleFinishTask?.cancel()
+        idleFinishTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled else { return }
+            self?.finish()
+        }
         guard useServer, !serverDown, let auth = auth() else { fallback.speak(text); return }
         if !streamUnavailable, output != nil {
             streamSpeak(text, auth: auth)
@@ -76,7 +95,9 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     /// server for `end`; the whole-file path finishes on its own.
     func finish() {
         idleFinishTask?.cancel()
+        replyFinished = true
         stream?.finish()
+        checkFinished()
     }
 
     func stop() {
@@ -96,6 +117,9 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         playerBusy = false
         fallback.stop()
         isSpeaking = false
+        heardAny = false
+        replyFinished = false
+        output?.setPhoneTalking(false)
     }
 
     // MARK: Streaming
@@ -112,14 +136,6 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
             streamRemainder = Data()
         }
         stream?.send(text)
-        // A reply whose end never gets signalled (chat error mid-turn) must not leave the
-        // socket open and the state stuck on speaking: ask for the end after a quiet spell.
-        idleFinishTask?.cancel()
-        idleFinishTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(20))
-            guard !Task.isCancelled else { return }
-            self?.stream?.finish()
-        }
     }
 
     private func handle(_ event: SpeakStream.Event, from s: SpeakStream) {
@@ -170,6 +186,9 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         guard let output else { return }
         let gen = generation
         queued += 1
+        heardAny = true
+        // The completion is `dataPlayedBack`: the samples have left the hardware, not merely
+        // the queue. That is the only end-of-speech signal used anywhere.
         output.play(buffer) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, gen == self.generation else { return }
@@ -266,6 +285,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         let buffer = ready.removeFirst()
         let gen = generation
         playerBusy = true
+        heardAny = true
         if let output {
             output.play(buffer) { [weak self] in
                 Task { @MainActor [weak self] in
@@ -315,12 +335,15 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         if !ready.isEmpty { playNextIfIdle() } else { checkFinished() }
     }
 
+    /// The reply is over when no more sentences are coming (`finish()`), the server has sent its
+    /// end, nothing is fetching, and the last buffer has played back through the hardware.
     private func checkFinished() {
-        guard isSpeaking, !isPlaying, streamIdle, ready.isEmpty, pending.isEmpty, fetchTask == nil,
+        guard isSpeaking, replyFinished, !isPlaying, streamIdle, ready.isEmpty, pending.isEmpty, fetchTask == nil,
               !fallback.isSpeaking else { return }
         idleFinishTask?.cancel()
         stream = nil
         isSpeaking = false
+        output?.setPhoneTalking(false)
         onFinished?()
     }
 }

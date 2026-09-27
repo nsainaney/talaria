@@ -31,11 +31,40 @@ Pinned sessions and skills are stored locally in UserDefaults, not on the server
 
 ## Layout
 
-- `talaria/Networking` – `GatewayAuth` (dashboard login, tickets), `GatewayClient` (JSON-RPC over WebSocket, replay), `Keychain`, `ImageEncoding`
-- `talaria/State` – `AppModel`, `ChatStore` (events → transcript rows), `SkillsStore`, `PinStore`, `ServerSettings`
-- `talaria/Views` – `RootView`, `ChatView`, `ChatRow`, `SessionsSidebar`, `SkillsView`, `SettingsView`, `ApprovalView` (+ `ClarifyView`)
+- `talaria/Networking` – `GatewayAuth` (dashboard login, tickets; `+Kanban` for the kanban plugin), `GatewayClient` (JSON-RPC over WebSocket, replay), `ContextClient` (the `talaria` plugin: triage, decisions, scan, SSE), `Keychain`, `ImageEncoding`
+- `talaria/State` – `AppModel`, `ChatStore` (events → transcript rows), `SkillsStore`, `PinStore`, `ServerSettings`, `TasksStore` (triage + board, the three answers), `RemindersWriter` (EventKit)
+- `talaria/Views` – `RootView`, `InboxView`, `ChatView`, `ChatRow` (+ `EntityCardView` for `card` blocks), `TasksView`, `TaskItemView`, `TaskCardView`, `SkillsView`, `SettingsView`, `ApprovalView` (+ `ClarifyView`)
 
 `Info.plist` allows plain-HTTP loads so LAN dashboards work; deployment target is iOS 26.5.
+
+## Tasks
+
+The Inbox has one row for Tasks. It opens two lists:
+
+- **Triage.** What came in, from the hermes-context engine through the dashboard's `talaria`
+  plugin (`/api/plugins/talaria/triage`): mail, iMessage, meetings and GitHub issues with your
+  name on them, screened for things to do, plus the Hermes backlog (kanban cards not started).
+  Three answers per item: **Me** writes an Apple Reminder on the phone with the source link in its
+  URL and `#source` in the notes; **Agent** files a bare kanban card in `triage`; **Ignore**. Every
+  answer is recorded as a decision in the context store. Swipe right for Me, left for Ignore or
+  Agent. The magnifier runs a scan; the engine screens each item version once and keeps its own
+  checkpoint. An Ignore shows a toast with *Why?*, which opens a chat running the
+  `screener-feedback` skill so the screener learns a rule.
+- **In progress.** What Hermes is doing, from the kanban plugin (`/api/plugins/kanban/board`),
+  then Done for the week. A blocked card shows its question and a reply field; the reply is a
+  comment plus a release back to ready.
+
+**Start** on a backlog card opens a chat with the card attached and the `task-grill` skill: Hermes
+looks up what it can, asks one question at a time, then posts the finished task as a fenced
+```` ```card ```` block. The app renders that block as a card with **Proceed**, which writes the
+title, body and assignee over the bare card and sets it ready for the dispatcher. `card` blocks with
+`type: reminder` render with *Add to Reminders*. Deep links: `talaria://tasks`,
+`talaria://task/<board>/<id>`, `talaria://chat/<session>`, `talaria://item/<context id>`.
+
+Server skills for this: copy `hermes/skills/task-grill/` and `hermes/skills/screener-feedback/` to
+`~/.hermes/skills/productivity/` on the Hermes host and reload skills. Without them the app sends a
+plain-language instruction instead. The context-engine side (candidates, decisions, scans, the
+`talaria` plugin) lives in nix-config under `services/hermes/context`.
 
 ## Voice (branch `voice`)
 

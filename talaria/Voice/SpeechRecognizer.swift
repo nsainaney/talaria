@@ -20,6 +20,10 @@ protocol AudioOutput: AnyObject {
     var playbackFormat: AVAudioFormat { get }
     func play(_ buffer: AVAudioPCMBuffer, completion: @escaping @Sendable () -> Void)
     func stopPlayback()
+    /// The phone is talking: the microphone input is muted inside the voice-processing unit for
+    /// the whole reply, so nothing of the phone's own voice can reach the recognizer. Off again
+    /// the moment the last sample has played back.
+    func setPhoneTalking(_ on: Bool)
 }
 
 private let log = Logger(subsystem: "com.sainaney.talaria", category: "voice")
@@ -35,7 +39,12 @@ final class SpeechRecognizer: AudioOutput {
     var onError: ((Error) -> Void)?
     /// Microphone level 0…1, about ten times a second, for a meter.
     var onLevel: ((Float) -> Void)?
+    /// While the input is muted, the voice-processing unit still watches for the person talking
+    /// (its own echo-aware detector, the one behind "you're muted"). True when speech starts,
+    /// false when it ends.
+    var onMutedSpeech: ((Bool) -> Void)?
     private(set) var isRunning = false
+    private(set) var isPhoneTalking = false
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
@@ -71,6 +80,15 @@ final class SpeechRecognizer: AudioOutput {
 
         let input = engine.inputNode
         do { try input.setVoiceProcessingEnabled(true) } catch { log.error("voice processing unavailable: \(error.localizedDescription)") }
+        if input.isVoiceProcessingEnabled {
+            let ok = input.setMutedSpeechActivityEventListener { [weak self] event in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRunning, self.isPhoneTalking else { return }
+                    self.onMutedSpeech?(event == .started)
+                }
+            }
+            if !ok { log.error("muted-speech listener not installed") }
+        }
         // Output graph first, then prepare, then read the input format the I/O unit settled on.
         engine.connect(playerNode, to: engine.mainMixerNode, format: playbackFormat)
         engine.prepare()
@@ -118,6 +136,8 @@ final class SpeechRecognizer: AudioOutput {
         task = nil
         request.withLock { $0?.endAudio(); $0 = nil }
         playerNode.stop()
+        if engine.inputNode.isVoiceProcessingEnabled { engine.inputNode.isVoiceProcessingInputMuted = false }
+        isPhoneTalking = false
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         level.withLock { $0 = (0, 0) }
@@ -134,6 +154,13 @@ final class SpeechRecognizer: AudioOutput {
 
     func stopPlayback() {
         playerNode.stop()
+    }
+
+    func setPhoneTalking(_ on: Bool) {
+        guard isRunning, isPhoneTalking != on else { return }
+        isPhoneTalking = on
+        let input = engine.inputNode
+        if input.isVoiceProcessingEnabled { input.isVoiceProcessingInputMuted = on }
     }
 
     private func beginUtterance() {

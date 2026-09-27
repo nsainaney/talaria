@@ -46,25 +46,7 @@ struct ChatRow: View {
             .padding(.horizontal)
 
         case .assistant:
-            Markdown(item.text)
-                .markdownTextStyle(\.code) {
-                    FontFamilyVariant(.monospaced)
-                    FontSize(.em(0.9))
-                    BackgroundColor(Color(.secondarySystemBackground))
-                }
-                .markdownBlockStyle(\.codeBlock) { configuration in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        configuration.label
-                            .markdownTextStyle {
-                                FontFamilyVariant(.monospaced)
-                                FontSize(.em(0.85))
-                            }
-                            .padding(12)
-                    }
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-                    .markdownMargin(top: 4, bottom: 8)
-                }
-                .textSelection(.enabled)
+            AssistantBody(text: item.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
 
