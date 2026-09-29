@@ -259,6 +259,7 @@ struct TasksView: View {
             case .release: Task { await answer(c.id) { try await tasks.start(c) } }
             case .stop: Task { await answer(c.id) { try await tasks.stop(c) } }
             case .drop: Task { await answer(c.id) { try await tasks.drop(c) } }
+            case .archive: Task { await answer(c.id) { try await tasks.archive(c) } }
             }
         } label: { a.label }
         .tint(a.tint)
@@ -317,7 +318,7 @@ struct TasksView: View {
                     ForEach(tasks.done) { c in
                         doneRow(c).listRowBackground(Color.clear).listRowSeparator(.hidden).listRowInsets(rowInsets)
                     }
-                } header: { header("Done", nil, "this week") }
+                } header: { doneHeader }
             }
         }
         .listStyle(.plain)
@@ -361,6 +362,18 @@ struct TasksView: View {
         return parts.joined(separator: " · ")
     }
 
+    /// "Done · this week" with Archive all on the right: the week's finished cards leave in one go.
+    private var doneHeader: some View {
+        HStack(spacing: 6) {
+            header("Done", nil, "this week")
+            Spacer()
+            Button("Archive all") { Task { await answer("done") { try await tasks.archiveDone() } } }
+                .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent).textCase(nil)
+                .disabled(busy.contains("done"))
+                .padding(.trailing, 4)
+        }
+    }
+
     private func doneRow(_ c: KanbanCard) -> some View {
         Button { path.append(InboxDestination.taskCard(c)) } label: {
             HStack(spacing: 10) {
@@ -370,12 +383,19 @@ struct TasksView: View {
                     Text([c.assignee, c.latestSummary].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 6)
-                if let d = c.completedAt { Text(Self.when(d)).font(.caption).foregroundStyle(.secondary) }
+                if busy.contains(c.id) || busy.contains("done") { ProgressView().controlSize(.small) }
+                else if let d = c.completedAt { Text(Self.when(d)).font(.caption).foregroundStyle(.secondary) }
             }
             .padding(10).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .glass(Theme.small)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            ForEach(CardAction.available(for: c)) { a in cardButton(a, c) }
+        }
+        .contextMenu {
+            ForEach(CardAction.available(for: c)) { a in cardButton(a, c) }
+        }
     }
 
     // MARK: Actions

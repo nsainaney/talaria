@@ -251,6 +251,24 @@ final class TasksStore {
         backlog.removeAll { $0.id == card.id }
     }
 
+    /// Archive: a finished card leaves Done for the board's archived column, where it stays in
+    /// search and in `list --archived`. The row goes at once; a failure puts it back on refresh.
+    func archive(_ card: KanbanCard) async throws {
+        guard let auth = settings.auth else { throw GatewayAuthError.notConfigured }
+        done.removeAll { $0.id == card.id }
+        do {
+            try await auth.kanbanPatch(card.id, board: card.board.isEmpty ? nil : card.board, fields: ["status": "archived"])
+        } catch {
+            await refresh()
+            throw error
+        }
+    }
+
+    /// Archive everything in Done. Stops at the first failure so the list shows what is left.
+    func archiveDone() async throws {
+        for card in done { try await archive(card) }
+    }
+
     /// Answer a blocked card: the reply is a comment, then the card is released to run again.
     func reply(_ card: KanbanCard, _ text: String) async throws {
         guard let auth = settings.auth else { throw GatewayAuthError.notConfigured }

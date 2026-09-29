@@ -118,12 +118,30 @@ final class ChatStore {
         }
     }
 
-    /// Re-fetch a session's transcript after a replay gap or server restart.
+    /// Re-fetch a session's transcript after a replay gap or server restart. A restarted gateway
+    /// hands the stored session a new live id; everything keyed by the old one moves over, or the
+    /// next prompt would go to an id the gateway no longer has.
     func resync(liveId: String) async {
         guard let client, let s = session, s.liveId == liveId else { return }
-        if let r = try? await client.request("session.resume", ["session_id": s.id], timeout: 180) {
-            apply(resume: r, to: liveId)
+        guard let r = try? await client.request("session.resume", ["session_id": s.id], timeout: 180) else { return }
+        var current = liveId
+        if let fresh = r["session_id"] as? String, !fresh.isEmpty, fresh != liveId {
+            adopt(liveId: fresh, replacing: liveId)
+            current = fresh
         }
+        apply(resume: r, to: current)
+    }
+
+    private func adopt(liveId new: String, replacing old: String) {
+        guard var s = session, s.liveId == old else { return }
+        s.liveId = new
+        session = s
+        if let t = transcripts.removeValue(forKey: old) { transcripts[new] = t }
+        if running.remove(old) != nil { running.insert(new) }
+        if let l = statusLines.removeValue(forKey: old) { statusLines[new] = l }
+        if let i = liveInfo.removeValue(forKey: old) { liveInfo[new] = i }
+        if expectingTurnStart.remove(old) != nil { expectingTurnStart.insert(new) }
+        client?.forgetSession(old)
     }
 
     private func apply(resume r: [String: Any], to liveId: String) {
@@ -197,7 +215,10 @@ final class ChatStore {
     }
 
     func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil, voice: VoiceTurn? = nil) async {
-        guard let client, client.isConnected else { error = GatewayError.notConnected.localizedDescription; return }
+        guard let client else { error = GatewayError.notConnected.localizedDescription; return }
+        // A reconnect in progress (server restart, network blip) usually completes within seconds.
+        for _ in 0..<40 where !client.isConnected { try? await Task.sleep(for: .milliseconds(250)) }
+        guard client.isConnected else { error = GatewayError.notConnected.localizedDescription; return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
         error = nil

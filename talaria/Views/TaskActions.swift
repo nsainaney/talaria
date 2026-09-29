@@ -46,8 +46,10 @@ enum MoveAction: String, CaseIterable, Identifiable {
     var label: some View { Label(title, systemImage: symbol) }
 }
 
+/// Drop and Archive both put the card in the board's archived column; Drop is for a card that
+/// never ran, Archive for one that finished and has been looked at.
 enum CardAction: String, CaseIterable, Identifiable {
-    case start, stop, release, drop
+    case start, stop, release, drop, archive
     var id: String { rawValue }
 
     var title: String {
@@ -56,6 +58,7 @@ enum CardAction: String, CaseIterable, Identifiable {
         case .stop: return "Stop"
         case .release: return "Release"
         case .drop: return "Drop"
+        case .archive: return "Archive"
         }
     }
 
@@ -65,6 +68,7 @@ enum CardAction: String, CaseIterable, Identifiable {
         case .stop: return "stop.fill"
         case .release: return "play"
         case .drop: return "archivebox"
+        case .archive: return "archivebox"
         }
     }
 
@@ -73,6 +77,7 @@ enum CardAction: String, CaseIterable, Identifiable {
         case .start, .release: return Theme.accent
         case .stop: return .orange
         case .drop: return .red
+        case .archive: return .secondary
         }
     }
 
@@ -84,6 +89,7 @@ enum CardAction: String, CaseIterable, Identifiable {
         case "triage", "todo": return [.start, .drop]
         case "scheduled": return [.release, .drop]
         case "ready", "running": return [.stop]
+        case "done": return [.archive]
         default: return []
         }
     }

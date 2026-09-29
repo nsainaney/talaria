@@ -42,7 +42,6 @@ final class SpeechRecognizer: AudioOutput {
     /// While the input is muted, the voice-processing unit still watches for the person talking
     /// (its own echo-aware detector, the one behind "you're muted"). True when speech starts,
     /// false when it ends.
-    var onMutedSpeech: ((Bool) -> Void)?
     private(set) var isRunning = false
     private(set) var isPhoneTalking = false
 
@@ -80,15 +79,6 @@ final class SpeechRecognizer: AudioOutput {
 
         let input = engine.inputNode
         do { try input.setVoiceProcessingEnabled(true) } catch { log.error("voice processing unavailable: \(error.localizedDescription)") }
-        if input.isVoiceProcessingEnabled {
-            let ok = input.setMutedSpeechActivityEventListener { [weak self] event in
-                Task { @MainActor [weak self] in
-                    guard let self, self.isRunning, self.isPhoneTalking else { return }
-                    self.onMutedSpeech?(event == .started)
-                }
-            }
-            if !ok { log.error("muted-speech listener not installed") }
-        }
         // Output graph first, then prepare, then read the input format the I/O unit settled on.
         engine.connect(playerNode, to: engine.mainMixerNode, format: playbackFormat)
         engine.prepare()

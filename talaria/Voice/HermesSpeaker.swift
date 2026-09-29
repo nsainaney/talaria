@@ -69,6 +69,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
 
     func speak(_ text: String) {
         if !isSpeaking {
+            Self.log.notice("speak: new reply, stream=\(self.stream?.tag ?? 0) streamUnavailable=\(self.streamUnavailable) serverDown=\(self.serverDown)")
             heardAny = false
             replyFinished = false
             output?.setPhoneTalking(true)
@@ -80,6 +81,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         idleFinishTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(20))
             guard !Task.isCancelled else { return }
+            Self.log.notice("speaker: 20 s idle, forcing finish")
             self?.finish()
         }
         guard useServer, !serverDown, let auth = auth() else { fallback.speak(text); return }
@@ -101,6 +103,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     }
 
     func stop() {
+        Self.log.notice("speaker stop: isSpeaking=\(self.isSpeaking) stream=\(self.stream?.tag ?? 0) queued=\(self.queued)")
         generation += 1
         idleFinishTask?.cancel()
         stream?.stop()
@@ -155,7 +158,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         case .end:
             checkFinished()
         case .fallback:
-            Self.log.info("speak-stream: server has no streaming TTS; using whole-file speech")
+            Self.log.notice("speak-stream: server has no streaming TTS; using whole-file speech")
             streamUnavailable = true
             respeakElsewhere(s)
         case .closed(let error):
@@ -341,6 +344,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         guard isSpeaking, replyFinished, !isPlaying, streamIdle, ready.isEmpty, pending.isEmpty, fetchTask == nil,
               !fallback.isSpeaking else { return }
         idleFinishTask?.cancel()
+        Self.log.notice("speaker: reply finished (stream \(self.stream?.tag ?? 0))")
         stream = nil
         isSpeaking = false
         output?.setPhoneTalking(false)

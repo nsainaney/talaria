@@ -23,7 +23,7 @@ import os
             log.info("voice \(name, privacy: .public): no voice chat running in \(Bundle.main.bundleIdentifier ?? "?", privacy: .public)")
             return
         }
-        log.info("voice \(name, privacy: .public) performed in \(Bundle.main.bundleIdentifier ?? "?", privacy: .public)")
+        log.notice("voice \(name, privacy: .public) performed in \(Bundle.main.bundleIdentifier ?? "?", privacy: .public)")
         body(commands)
     }
 }

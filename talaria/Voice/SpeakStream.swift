@@ -33,25 +33,36 @@ final class SpeakStream {
     private var isOpen = false
     private var outbox: [String] = []
     private var doneQueued = false
+    private static var counter = 0
+    let tag: Int
 
     init(auth: GatewayAuth) {
+        Self.counter += 1
+        tag = Self.counter
+        Self.log.notice("stream \(self.tag) created")
         connectTask = Task { [weak self] in
             do {
                 let ticket = try await auth.wsTicket()
                 guard let self, !Task.isCancelled else { return }
+                Self.log.notice("stream \(self.tag) ticket ok, connecting")
                 let t = session.webSocketTask(with: auth.webSocketURL(path: "/api/audio/speak-stream", ticket: ticket))
                 t.resume()
                 task = t
                 await receiveLoop(t)
             } catch {
+                Self.log.error("stream \(self?.tag ?? 0) ticket/connect failed: \(error.localizedDescription, privacy: .public)")
                 self?.close(with: error)
             }
         }
     }
 
     func send(_ text: String) {
-        guard !finished, !ended else { return }
+        guard !finished, !ended else {
+            Self.log.error("stream \(self.tag) send after finished=\(self.finished) ended=\(self.ended): \(text.prefix(40), privacy: .public)")
+            return
+        }
         sent.append(text)
+        Self.log.notice("stream \(self.tag) send #\(self.sent.count) open=\(self.isOpen) \(text.prefix(40), privacy: .public)")
         if isOpen { post(["text": text + " "]) } else { outbox.append(text) }
     }
 
@@ -59,11 +70,13 @@ final class SpeakStream {
     func finish() {
         guard !finished else { return }
         finished = true
+        Self.log.notice("stream \(self.tag) done open=\(self.isOpen)")
         if isOpen { post(["done": true]) } else { doneQueued = true }
     }
 
     /// Barge-in: tell the server to stop synthesising and drop the socket.
     func stop() {
+        Self.log.notice("stream \(self.tag) stop open=\(self.isOpen) gotAudio=\(self.gotAudio)")
         onEvent = nil
         finished = true
         ended = true
@@ -76,10 +89,16 @@ final class SpeakStream {
     private func receiveLoop(_ t: URLSessionWebSocketTask) async {
         while !Task.isCancelled, !ended {
             let message: URLSessionWebSocketTask.Message
-            do { message = try await t.receive() } catch { close(with: error); return }
+            do { message = try await t.receive() } catch {
+                Self.log.error("stream \(self.tag) receive failed: \(error.localizedDescription, privacy: .public)")
+                close(with: error); return
+            }
             switch message {
             case .data(let d):
-                if !d.isEmpty { gotAudio = true; onEvent?(.audio(d)) }
+                if !d.isEmpty {
+                    if !gotAudio { Self.log.notice("stream \(self.tag) first audio") }
+                    gotAudio = true; onEvent?(.audio(d))
+                }
             case .string(let s):
                 handle(json: s)
             @unknown default:
@@ -92,6 +111,7 @@ final class SpeakStream {
         let obj = (try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]) ?? [:]
         switch obj["type"] as? String {
         case "start":
+            Self.log.notice("stream \(self.tag) start; queued \(self.outbox.count) done=\(self.doneQueued)")
             isOpen = true
             let rate = (obj["sample_rate"] as? Double) ?? Double((obj["sample_rate"] as? Int) ?? 24000)
             let channels = max(1, (obj["channels"] as? Int) ?? 1)
@@ -100,11 +120,13 @@ final class SpeakStream {
             outbox = []
             if doneQueued { post(["done": true]) }
         case "end":
+            Self.log.notice("stream \(self.tag) end")
             ended = true
             onEvent?(.end)
             task?.cancel(with: .normalClosure, reason: nil)
             task = nil
         case "fallback":
+            Self.log.notice("stream \(self.tag) fallback")
             ended = true
             onEvent?(.fallback)
             task?.cancel(with: .normalClosure, reason: nil)
@@ -116,6 +138,7 @@ final class SpeakStream {
 
     private func close(with error: Error) {
         guard !ended else { return }
+        Self.log.error("stream \(self.tag) closed: \(error.localizedDescription, privacy: .public)")
         ended = true
         task?.cancel(with: .goingAway, reason: nil)
         task = nil

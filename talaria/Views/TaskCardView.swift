@@ -70,6 +70,7 @@ struct TaskCardView: View {
                             case .release: Task { await run { try await tasks.start(current) } }
                             case .stop: Task { await run { try await tasks.stop(current) } }
                             case .drop: Task { await run { try await tasks.drop(current) }; if !path.isEmpty { path.removeLast() } }
+                            case .archive: Task { await run { try await tasks.archive(current) }; if !path.isEmpty { path.removeLast() } }
                             }
                         } label: { a.label }
                     }
@@ -104,7 +105,7 @@ struct TaskCardView: View {
         case "blocked": return current.needsYou ? "Needs you" : "Blocked · " + (current.blockKind ?? "")
         case "review": return "In review"
         case "done": return current.lastError == nil ? "Done" : "Failed"
-        case "archived": return "Dropped"
+        case "archived": return current.completedAt == nil ? "Dropped" : "Archived"
         default: return current.status
         }
     }

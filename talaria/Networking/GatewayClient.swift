@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Observation
 
 /// One event frame from the gateway (`{"method":"event","params":{type, session_id, seq, payload}}`).
@@ -73,8 +74,11 @@ final class GatewayClient {
         case failed(String)
     }
 
-    var state: State = .disconnected
+    var state: State = .disconnected {
+        didSet { if state != oldValue { Self.log.notice("gateway \(String(describing: self.state), privacy: .public)") } }
+    }
     var isConnected: Bool { state == .connected }
+    private static let log = Logger(subsystem: "com.sainaney.talaria", category: "gateway")
 
     /// Dispatched on the main actor, in order, seq-gated per session.
     var onEvent: ((GatewayEvent) -> Void)?

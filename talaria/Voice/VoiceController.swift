@@ -3,14 +3,22 @@ import Foundation
 import Observation
 import os
 
-/// Hands-free conversation with Hermes: listen, send, speak the reply, listen again. Talking over
-/// a reply stops it. Permission and clarify requests are read aloud and can be answered by voice.
+/// Hands-free conversation with Hermes: listen, send, speak the reply, listen again. The mic is
+/// muted while Hermes talks; the Quiet button cuts a reply off. Permission and clarify requests
+/// are read aloud and can be answered by voice.
 @Observable @MainActor
 final class VoiceController: VoiceChatCommands {
     enum State: Equatable { case idle, listening, thinking, speaking }
     enum Answering: Equatable { case none, approval, clarify }
 
-    private(set) var state: State = .idle { didSet { if state != oldValue { publish() } } }
+    private(set) var state: State = .idle {
+        didSet {
+            if state != oldValue {
+                Self.log.notice("state \(String(describing: oldValue), privacy: .public) -> \(String(describing: self.state), privacy: .public)")
+                publish()
+            }
+        }
+    }
     private(set) var answering: Answering = .none
     /// Live text of the utterance being spoken by the person.
     private(set) var transcript = ""
@@ -32,6 +40,9 @@ final class VoiceController: VoiceChatCommands {
     private var workingCueTask: Task<Void, Never>?
     /// Set after a barge-in so the rest of the interrupted reply stays silent.
     private var muteReply = false
+    /// What is playing is a cue or a question of the app's own, not Hermes's reply; cutting it
+    /// off must not silence the reply that follows.
+    private var speakingCue = false
     /// Whether the person cut the last reply off; told to Hermes on the next turn.
     private var interruptedLastReply = false
     /// Session switched to the fast alias for voice, and what to restore afterwards.
@@ -63,7 +74,6 @@ final class VoiceController: VoiceChatCommands {
         recognizer.onText = { [weak self] in self?.heard($0) }
         recognizer.onError = { [weak self] in self?.error = $0.localizedDescription }
         recognizer.onLevel = { [weak self] in self?.micLevel = $0 }
-        recognizer.onMutedSpeech = { [weak self] started in self?.spokenOver(started) }
         speaker.onFinished = { [weak self] in self?.finishedSpeaking() }
         chat.signal = { [weak self] in self?.handle($0) }
     }
@@ -87,6 +97,7 @@ final class VoiceController: VoiceChatCommands {
     }
 
     func pause() {
+        Self.log.notice("pause requested")
         guard isActive, !isPaused else { return }
         isPaused = true
         silenceTask?.cancel()
@@ -113,19 +124,27 @@ final class VoiceController: VoiceChatCommands {
     /// Cut off what Hermes is saying right now. The rest of that reply stays silent; the mic and
     /// the chat go on, and Hermes is told next turn that it was cut off.
     func shush() {
+        Self.log.notice("shush requested in state \(String(describing: self.state), privacy: .public)")
         guard state == .speaking else { return }
-        interruptReply()
+        interruptReply("quiet button")
         finishedSpeaking()
     }
 
-    private func interruptReply() {
+    private func interruptReply(_ reason: String) {
+        Self.log.notice("\(self.speakingCue ? "cue" : "reply", privacy: .public) interrupted: \(reason, privacy: .public)")
         speaker.stop()
-        splitter = SpeechSentenceSplitter()
-        muteReply = true
-        interruptedLastReply = true
+        if speakingCue {
+            // Only the app's own cue was cut; Hermes's reply is still wanted.
+            speakingCue = false
+        } else {
+            splitter = SpeechSentenceSplitter()
+            muteReply = true
+            interruptedLastReply = true
+        }
     }
 
     func stop() {
+        Self.log.notice("voice stop requested in state \(String(describing: self.state), privacy: .public)")
         isPaused = false
         restoreModel()
         silenceTask?.cancel()
@@ -210,14 +229,6 @@ final class VoiceController: VoiceChatCommands {
         }
     }
 
-    /// The voice-processing unit heard the person start talking while the phone was talking.
-    /// With "Listen while Hermes speaks" on, that is the barge-in: stop the reply and open the mic.
-    /// Off, the Quiet button is the only way to cut Hermes off.
-    private func spokenOver(_ started: Bool) {
-        guard started, settings.voiceBargeIn, state == .speaking, !speaker.isPreparing else { return }
-        interruptReply()
-        finishedSpeaking()
-    }
 
     private func utteranceEnded() {
         let text = transcript
@@ -257,7 +268,12 @@ final class VoiceController: VoiceChatCommands {
         } else {
             await chat.send(text, skills: skills, voice: turn)
         }
-        if chat.error != nil, state == .thinking { state = .listening }
+        if let e = chat.error, state == .thinking {
+            Self.log.error("send failed: \(e, privacy: .public)")
+            error = e
+            sayNow("I could not reach Hermes. " + e)
+            state = .listening
+        }
     }
 
     // MARK: Fast model while talking
@@ -295,6 +311,7 @@ final class VoiceController: VoiceChatCommands {
         workingCueTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(15))
             guard !Task.isCancelled, let self, self.state == .thinking, !self.splitter.receivedAny else { return }
+            Self.log.notice("working cue")
             self.sayNow("Still working on it.")
         }
     }
@@ -312,6 +329,7 @@ final class VoiceController: VoiceChatCommands {
             workingCueTask?.cancel()
             for chunk in splitter.push(text) { say(chunk) }
         case .turnComplete(let final, let status):
+            Self.log.notice("turn complete status=\(status ?? "-", privacy: .public) muted=\(self.muteReply) receivedAny=\(self.splitter.receivedAny) final=\(final?.count ?? 0) chars")
             workingCueTask?.cancel()
             if !muteReply {
                 if !splitter.receivedAny, let final, status != "interrupted" { _ = splitter.push(final) }
@@ -327,6 +345,7 @@ final class VoiceController: VoiceChatCommands {
 
     /// One more sentence of the reply in progress; `speaker.finish()` follows the last one.
     private func say(_ text: String) {
+        speakingCue = false
         state = .speaking
         recentlySpoken.append((Date(), Set(Self.words(text))))
         speaker.speak(text)
@@ -335,6 +354,7 @@ final class VoiceController: VoiceChatCommands {
     /// A complete utterance of its own (a cue or a question), not part of a streamed reply.
     private func sayNow(_ text: String) {
         say(text)
+        speakingCue = true
         speaker.finish()
     }
 
@@ -359,6 +379,7 @@ final class VoiceController: VoiceChatCommands {
     /// input is open again. Start a fresh utterance so the recognizer begins from silence.
     private func finishedSpeaking() {
         guard state == .speaking else { return }
+        speakingCue = false
         silenceTask?.cancel()
         transcript = ""
         recognizer.nextUtterance()
@@ -385,7 +406,7 @@ final class VoiceController: VoiceChatCommands {
         } else if answering != .none {
             // Answered on screen while we were still asking.
             answering = .none
-            if state == .speaking { speaker.stop(); finishedSpeaking() }
+            if state == .speaking { Self.log.notice("request answered on screen; stopping the question"); speaker.stop(); finishedSpeaking() }
         }
     }
 
