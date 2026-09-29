@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// A chat, pushed from the inbox. The title is edited in place; the ellipsis holds the chat's
 /// settings; the waveform switches the same conversation to voice, the pencil back to text.
@@ -34,6 +35,8 @@ struct ChatScreen: View {
                             Button { model.pins.toggleSession(s.id) } label: {
                                 Label(model.pins.isSessionPinned(s.id) ? "Unpin" : "Pin", systemImage: model.pins.isSessionPinned(s.id) ? "pin.slash" : "pin")
                             }
+                            // The stored id: what Hermes tools, the API server and talaria:// links take.
+                            Button { UIPasteboard.general.string = s.id } label: { Label("Copy chat ID", systemImage: "doc.on.doc") }
                             Divider()
                             Button(role: .destructive) { confirmDelete = true } label: { Label("Delete chat", systemImage: "trash") }
                         }
