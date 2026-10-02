@@ -3,13 +3,16 @@ import Foundation
 import os
 
 /// Speaks reply text with the voice configured on the Hermes server. Preferred path: the
-/// dashboard's `/api/audio/speak-stream` WebSocket — sentences go up as they arrive and PCM comes
-/// back while the server is still synthesising, so speech starts a fraction of a second after the
-/// first sentence. Falls back to `POST /api/audio/speak` (one WAV per sentence, fetched in order
-/// with the next fetch overlapping playback) when the server has no streaming provider or the
-/// socket fails, and to the on-device voice when the server cannot synthesize at all. Audio plays
-/// through the recognizer's engine when one is attached, so the echo canceller has the right
-/// reference.
+/// dashboard's `/api/audio/speak-stream` WebSocket, one stream per sentence: PCM comes back while
+/// the server is still synthesising, so speech starts a fraction of a second after the first
+/// sentence, and the next sentence's stream opens as soon as the server finishes the current one.
+/// One sentence per stream is what makes a dropped socket recoverable: the phone knows exactly
+/// which sentence was cut and says it again on a fresh stream once the network is back, instead
+/// of losing the rest of the reply. Falls back to `POST /api/audio/speak` (one WAV per sentence,
+/// fetched in order with the next fetch overlapping playback) when the server has no streaming
+/// provider or a sentence keeps failing, and to the on-device voice when the server cannot
+/// synthesize at all. Audio plays through the recognizer's engine when one is attached, so the
+/// echo canceller has the right reference.
 @MainActor
 final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     private(set) var isSpeaking = false
@@ -34,15 +37,21 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     private var generation = 0
     private var serverDown = false
 
-    // Streaming path
+    // Streaming path: one sentence per stream, in order.
+    /// The stream synthesising `currentText`; nil between sentences.
     private var stream: SpeakStream?
+    private var currentText = ""
+    private var currentAttempts = 0
+    /// Sentences waiting for their stream.
+    private var waiting: [String] = []
+    private var retryTask: Task<Void, Never>?
     private var streamFormat: (rate: Double, channels: Int) = (24000, 1)
     private var streamRemainder = Data()
     /// Buffers scheduled on the engine and not yet played back.
     private var queued = 0
-    private var streamFailures = 0
     private var streamUnavailable = false
     private var idleFinishTask: Task<Void, Never>?
+    private static let maxAttempts = 5
 
     // Whole-file path
     private var pending: [String] = []
@@ -52,7 +61,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     private var fetchTask: Task<Void, Never>?
 
     private var isPlaying: Bool { playerBusy || queued > 0 }
-    private var streamIdle: Bool { stream?.ended ?? true }
+    private var streamIdle: Bool { stream == nil && waiting.isEmpty && retryTask == nil }
 
     override init() {
         super.init()
@@ -63,20 +72,34 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     func resetSession() {
         serverDown = false
         streamUnavailable = false
-        streamFailures = 0
         lastError = nil
     }
 
     func speak(_ text: String) {
+        // Markdown stripping can leave a bare "." or "-" as its own sentence; nothing to say.
+        guard text.contains(where: { $0.isLetter || $0.isNumber }) else { return }
         if !isSpeaking {
-            Self.log.notice("speak: new reply, stream=\(self.stream?.tag ?? 0) streamUnavailable=\(self.streamUnavailable) serverDown=\(self.serverDown)")
+            Self.log.notice("speak: new reply, streamUnavailable=\(self.streamUnavailable) serverDown=\(self.serverDown)")
             heardAny = false
             replyFinished = false
             output?.setPhoneTalking(true)
         }
         isSpeaking = true
-        // A reply whose end never gets signalled (chat error mid-turn) must not leave the state
-        // stuck on speaking: treat a long quiet spell as the end.
+        armIdleFinish()
+        guard useServer, !serverDown, auth() != nil else { fallback.speak(text); return }
+        if !streamUnavailable, output != nil {
+            waiting.append(text)
+            startNextIfIdle()
+        } else {
+            pending.append(text)
+            pump()
+        }
+    }
+
+    /// A reply whose end never gets signalled (chat error mid-turn) must not leave the state stuck
+    /// on speaking: a long spell with nothing arriving counts as the end. Re-armed on every
+    /// sentence and every audio frame, so a slow synthesis or a retry never trips it.
+    private func armIdleFinish() {
         idleFinishTask?.cancel()
         idleFinishTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(20))
@@ -84,30 +107,26 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
             Self.log.notice("speaker: 20 s idle, forcing finish")
             self?.finish()
         }
-        guard useServer, !serverDown, let auth = auth() else { fallback.speak(text); return }
-        if !streamUnavailable, output != nil {
-            streamSpeak(text, auth: auth)
-        } else {
-            pending.append(text)
-            pump()
-        }
     }
 
-    /// The current reply has no more sentences. Streaming needs this to know when to ask the
-    /// server for `end`; the whole-file path finishes on its own.
+    /// The current reply has no more sentences. The sentences already queued still get spoken.
     func finish() {
         idleFinishTask?.cancel()
         replyFinished = true
-        stream?.finish()
         checkFinished()
     }
 
     func stop() {
-        Self.log.notice("speaker stop: isSpeaking=\(self.isSpeaking) stream=\(self.stream?.tag ?? 0) queued=\(self.queued)")
+        Self.log.notice("speaker stop: isSpeaking=\(self.isSpeaking) stream=\(self.stream?.tag ?? 0) waiting=\(self.waiting.count) queued=\(self.queued)")
         generation += 1
         idleFinishTask?.cancel()
+        retryTask?.cancel()
+        retryTask = nil
         stream?.stop()
         stream = nil
+        currentText = ""
+        currentAttempts = 0
+        waiting = []
         streamRemainder = Data()
         queued = 0
         fetchTask?.cancel()
@@ -127,18 +146,26 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
 
     // MARK: Streaming
 
-    private func streamSpeak(_ text: String, auth: GatewayAuth) {
-        if stream == nil || stream!.finished || stream!.ended {
-            let s = SpeakStream(auth: auth)
-            let gen = generation
-            s.onEvent = { [weak self] event in
-                guard let self, gen == self.generation, self.stream === s else { return }
-                self.handle(event, from: s)
-            }
-            stream = s
-            streamRemainder = Data()
+    /// Opens a stream for the next waiting sentence when none is in flight.
+    private func startNextIfIdle() {
+        guard stream == nil, retryTask == nil, !waiting.isEmpty, let auth = auth() else { return }
+        currentText = waiting.removeFirst()
+        currentAttempts = 0
+        open(currentText, auth: auth)
+    }
+
+    private func open(_ text: String, auth: GatewayAuth) {
+        currentAttempts += 1
+        let s = SpeakStream(auth: auth)
+        let gen = generation
+        s.onEvent = { [weak self] event in
+            guard let self, gen == self.generation, self.stream === s else { return }
+            self.handle(event, from: s)
         }
-        stream?.send(text)
+        stream = s
+        streamRemainder = Data()
+        s.send(text)
+        s.finish()
     }
 
     private func handle(_ event: SpeakStream.Event, from s: SpeakStream) {
@@ -146,7 +173,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         case .start(let rate, let channels):
             streamFormat = (rate, channels)
         case .audio(let data):
-            streamFailures = 0
+            armIdleFinish()
             var bytes = streamRemainder + data
             let frameBytes = 2 * streamFormat.channels
             let whole = bytes.count - bytes.count % frameBytes
@@ -156,33 +183,48 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
                   let buffer = convert(raw) else { return }
             schedule(buffer)
         case .end:
+            // This sentence is fully synthesised (it may still be playing); on to the next.
+            stream = nil
+            currentText = ""
+            startNextIfIdle()
             checkFinished()
         case .fallback:
             Self.log.notice("speak-stream: server has no streaming TTS; using whole-file speech")
             streamUnavailable = true
-            respeakElsewhere(s)
+            stream = nil
+            pending.append(contentsOf: [currentText] + waiting)
+            currentText = ""
+            waiting = []
+            pump()
+            checkFinished()
         case .closed(let error):
-            if s.gotAudio {
-                // Dropped mid-reply after audio: what played, played. Two in a row and the
-                // session goes whole-file.
-                streamFailures += 1
-                if streamFailures >= 2 { streamUnavailable = true }
-                Self.log.error("speak-stream dropped: \(error.localizedDescription, privacy: .public)")
+            // The socket died before `end`: a network blip, most often. Say this sentence again
+            // on a fresh stream once the connection is back; the sentences after it are still
+            // waiting and untouched. Whatever of this sentence already played repeats briefly.
+            stream = nil
+            streamRemainder = Data()
+            Self.log.error("speak-stream dropped (attempt \(self.currentAttempts), audio=\(s.gotAudio)): \(error.localizedDescription, privacy: .public)")
+            if currentAttempts >= Self.maxAttempts {
+                Self.log.error("speak-stream: giving up on streaming this reply; whole-file for the rest")
+                pending.append(contentsOf: [currentText] + waiting)
+                currentText = ""
+                waiting = []
+                pump()
                 checkFinished()
-            } else {
-                Self.log.error("speak-stream failed: \(error.localizedDescription, privacy: .public)")
-                streamUnavailable = true
-                respeakElsewhere(s)
+                return
+            }
+            let delay = min(8.0, 0.5 * pow(2.0, Double(currentAttempts - 1)))
+            let gen = generation
+            let text = currentText
+            retryTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, let self, gen == self.generation else { return }
+                self.retryTask = nil
+                guard let auth = self.auth() else { return }
+                self.armIdleFinish()
+                self.open(text, auth: auth)
             }
         }
-    }
-
-    /// The stream produced nothing: say its sentences through the whole-file path instead.
-    private func respeakElsewhere(_ s: SpeakStream) {
-        if stream === s { stream = nil }
-        pending.append(contentsOf: s.sent)
-        pump()
-        checkFinished()
     }
 
     private func schedule(_ buffer: AVAudioPCMBuffer) {
@@ -344,8 +386,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         guard isSpeaking, replyFinished, !isPlaying, streamIdle, ready.isEmpty, pending.isEmpty, fetchTask == nil,
               !fallback.isSpeaking else { return }
         idleFinishTask?.cancel()
-        Self.log.notice("speaker: reply finished (stream \(self.stream?.tag ?? 0))")
-        stream = nil
+        Self.log.notice("speaker: reply finished")
         isSpeaking = false
         output?.setPhoneTalking(false)
         onFinished?()
