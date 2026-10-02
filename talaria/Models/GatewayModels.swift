@@ -86,6 +86,35 @@ struct ApprovalRequest: Identifiable, Equatable {
     static func == (a: ApprovalRequest, b: ApprovalRequest) -> Bool { a.id == b.id }
 }
 
+/// A masked value the agent needs: the sudo password, a secret for an environment variable, or
+/// the master password of a password manager. Answered with the value; an empty one skips.
+struct SecretRequest: Identifiable, Equatable {
+    let id: String
+    let sessionId: String?
+    let title: String
+    let prompt: String
+    let request: ServerRequest
+
+    init(request: ServerRequest) {
+        id = request.id
+        sessionId = request.sessionId
+        switch request.method {
+        case "sudo":
+            title = "Password needed"
+            prompt = "Hermes needs the sudo password to run a command."
+        case "vault.unlock_prompt":
+            title = "Unlock"
+            prompt = "Master password for \(request.string("display_name") ?? request.string("backend") ?? "the password manager")."
+        default:
+            title = "Secret needed"
+            prompt = request.string("prompt") ?? request.string("env_var").map { "A value for \($0)." } ?? "Hermes needs a value."
+        }
+        self.request = request
+    }
+
+    static func == (a: SecretRequest, b: SecretRequest) -> Bool { a.id == b.id }
+}
+
 /// The clarify tool asking one question with optional choices.
 struct ClarifyRequest: Identifiable, Equatable {
     let id: String

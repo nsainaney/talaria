@@ -213,7 +213,8 @@ final class VoiceController: VoiceChatCommands {
         // The input is muted inside the voice-processing unit while the phone talks, so nothing
         // arrives here during a reply; anything that still does is dropped rather than trusted.
         if speaker.isSpeaking { return }
-        if isEcho(trimmed) { return }
+        // Not while answering: the prompt just said "allow" and "deny", the very words expected back.
+        if answering == .none, isEcho(trimmed) { return }
         transcript = trimmed
         silenceTask?.cancel()
         let pause = endOfUtterance
@@ -234,7 +235,7 @@ final class VoiceController: VoiceChatCommands {
         let text = transcript
         transcript = ""
         recognizer.nextUtterance()
-        guard !text.isEmpty, !isEcho(text) else { return }
+        guard !text.isEmpty, answering != .none || !isEcho(text) else { return }
         switch answering {
         case .approval: answerApproval(text)
         case .clarify: answerClarify(text)
@@ -425,7 +426,11 @@ final class VoiceController: VoiceChatCommands {
             return
         }
         answering = .none
-        chat.respond(to: a, choice: choice)
+        guard chat.respond(to: a, choice: choice) else {
+            answering = .approval
+            sayNow("I could not reach Hermes. Say it again in a moment.")
+            return
+        }
         sayNow(choice == "deny" ? "Denied." : "Allowed.")
     }
 
@@ -442,7 +447,11 @@ final class VoiceController: VoiceChatCommands {
             answer = hits[0]
         }
         answering = .none
-        chat.respond(to: c, answer: answer)
+        guard chat.respond(to: c, answer: answer) else {
+            answering = .clarify
+            sayNow("I could not reach Hermes. Say it again in a moment.")
+            return
+        }
         state = .thinking
     }
 

@@ -49,9 +49,36 @@ final class ChatStore {
     /// Sessions where this client just submitted a prompt, so the next message.start is ours.
     private var expectingTurnStart: Set<String> = []
     var isLoadingHistory = false
-    var pendingApproval: ApprovalRequest? { didSet { signal?(.requestsChanged) } }
-    var pendingClarify: ClarifyRequest? { didSet { signal?(.requestsChanged) } }
+    /// Open requests from the agent, oldest first. The server can hold several at once and each
+    /// waits for its own reply, so they queue; the sheets show the first.
+    private(set) var approvals: [ApprovalRequest] = [] { didSet { if approvals != oldValue { signal?(.requestsChanged) } } }
+    private(set) var clarifies: [ClarifyRequest] = [] { didSet { if clarifies != oldValue { signal?(.requestsChanged) } } }
+    private(set) var secrets: [SecretRequest] = []
+    var pendingApproval: ApprovalRequest? { approvals.first }
+    var pendingClarify: ClarifyRequest? { clarifies.first }
+    var pendingSecret: SecretRequest? { secrets.first }
+    /// Why the last answer did not go out; shown on the request's sheet.
+    private(set) var requestError: String?
     var error: String?
+    /// The open chat is shown but not attached yet (the socket was down); retried on reconnect.
+    private(set) var needsOpen = false
+    /// Counts opens, so a slow resume cannot land on a chat the person has since left.
+    private var openGeneration = 0
+    /// The bubble of a send still on its way; taken back if the send fails.
+    private var unsentBubble: UUID?
+
+    /// What is typed but not sent, per chat (by stored id; the unsent new chat has its own slot),
+    /// so it survives leaving the chat or switching to voice.
+    struct Draft {
+        var text = ""
+        var attachments: [Attachment] = []
+    }
+    private var drafts: [String: Draft] = [:]
+    private var draftSlot: String { session?.id ?? Self.draftKey }
+    var draft: Draft {
+        get { drafts[draftSlot] ?? Draft() }
+        set { drafts[draftSlot] = newValue.text.isEmpty && newValue.attachments.isEmpty ? nil : newValue }
+    }
 
     var client: GatewayClient?
     var onSessionCreated: ((HermesSession) -> Void)?
@@ -92,6 +119,9 @@ final class ChatStore {
     // MARK: Session lifecycle
 
     func startNewChat() {
+        openGeneration += 1
+        needsOpen = false
+        isLoadingHistory = false
         session = nil
         transcripts[Self.draftKey] = []
         error = nil
@@ -102,20 +132,35 @@ final class ChatStore {
     /// in-flight turn keeps streaming into this transcript.
     func open(_ s: HermesSession) async {
         guard let client else { return }
+        openGeneration += 1
+        let gen = openGeneration
         error = nil
+        // Show this chat at once, so a resume that fails or is slow never leaves the previous
+        // chat's transcript (and its sends) under this one's title.
+        if session?.id != s.id { session = s }
         isLoadingHistory = true
-        defer { isLoadingHistory = false }
+        guard client.isConnected else { needsOpen = true; return } // reopened when the socket is back
         do {
             let r = try await client.request("session.resume", ["session_id": s.id], timeout: 180)
+            guard gen == openGeneration else { return }
             var live = s
             live.liveId = r["session_id"] as? String ?? s.id
             if let info = r["info"] as? [String: Any], let t = info["title"] as? String, !t.isEmpty { live.title = t }
             session = live
+            needsOpen = false
             UserDefaults.standard.set(s.id, forKey: Self.lastSessionKey)
             apply(resume: r, to: live.liveId)
         } catch {
+            guard gen == openGeneration else { return }
+            needsOpen = true
             self.error = error.localizedDescription
         }
+        isLoadingHistory = false
+    }
+
+    /// The socket is back: attach the chat that was opened while it was down.
+    func reopenIfNeeded() async {
+        if needsOpen, let s = session { await open(s) }
     }
 
     /// Re-fetch a session's transcript after a replay gap or server restart. A restarted gateway
@@ -158,10 +203,9 @@ final class ChatStore {
         transcripts[liveId] = rows
         recordInfo(r["info"] as? [String: Any], for: liveId)
         if isRunning { running.insert(liveId) } else { running.remove(liveId) }
-        if let pa = r["pending_approval"] as? [String: Any], pendingApproval == nil {
-            // The open server request itself arrives via open_requests; this only pre-warns.
-            _ = pa
-        }
+        // The open server requests themselves arrive via open_requests (absent when there are none).
+        let open = (r["open_requests"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+        reconcileRequests(session: liveId, open: Set(open))
     }
 
     /// Fetch the prompt of a turn that another client started on the open session.
@@ -184,10 +228,11 @@ final class ChatStore {
         transcripts[liveId] = items
     }
 
-    func forget(sessionLiveId: String) {
-        transcripts[sessionLiveId] = nil
-        running.remove(sessionLiveId)
-        client?.forgetSession(sessionLiveId)
+    func forget(_ s: HermesSession) {
+        transcripts[s.liveId] = nil
+        running.remove(s.liveId)
+        drafts[s.id] = nil
+        client?.forgetSession(s.liveId)
     }
 
     func lastOpenedSessionId() -> String? { UserDefaults.standard.string(forKey: Self.lastSessionKey) }
@@ -214,91 +259,122 @@ final class ChatStore {
         }.joined(separator: "\n")
     }
 
-    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil, voice: VoiceTurn? = nil) async {
-        guard let client else { error = GatewayError.notConnected.localizedDescription; return }
+    /// False when the message did not go out; the caller still has the text and gives it back
+    /// to the composer.
+    @discardableResult
+    func send(_ text: String, images: [UIImage] = [], files: [(name: String, text: String)] = [], skills: SkillsStore? = nil, voice: VoiceTurn? = nil) async -> Bool {
+        guard let client else { error = GatewayError.notConnected.localizedDescription; return false }
         // A reconnect in progress (server restart, network blip) usually completes within seconds.
         for _ in 0..<40 where !client.isConnected { try? await Task.sleep(for: .milliseconds(250)) }
-        guard client.isConnected else { error = GatewayError.notConnected.localizedDescription; return }
+        guard client.isConnected else { error = GatewayError.notConnected.localizedDescription; return false }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return }
+        guard !text.isEmpty || !images.isEmpty || !files.isEmpty else { return true }
         error = nil
         do {
             if session == nil { try await createSession(client) }
-            guard let session else { return }
-            let sid = session.liveId
-
-            // Attachments are staged server-side before the prompt.
-            for img in images {
-                guard let jpeg = ImageEncoding.jpegData(img) else { continue }
-                _ = try await client.request("image.attach_bytes", [
-                    "session_id": sid, "content_base64": jpeg.base64EncodedString(), "filename": "photo.jpg", "ext": "jpg"], timeout: 120)
+            do {
+                try await deliver(text, images: images, files: files, skills: skills, voice: voice, client: client)
+            } catch let e as GatewayError where e.isSessionGone {
+                // The gateway dropped the live session while the phone was away. Attach to the
+                // stored one again, which hands out a new live id, and send once more.
+                guard let stale = session?.liveId else { throw e }
+                retractSend(in: stale)
+                await resync(liveId: stale)
+                try await deliver(text, images: images, files: files, skills: skills, voice: voice, client: client)
             }
-            var body = text
-            for f in files {
-                let dataURL = "data:text/plain;base64," + Data(f.text.utf8).base64EncodedString()
-                if let r = try? await client.request("file.attach", ["session_id": sid, "data_url": dataURL, "name": f.name], timeout: 120),
-                   let ref = r["ref_text"] as? String, !ref.isEmpty {
-                    body += (body.isEmpty ? "" : "\n") + ref
-                } else {
-                    body += "\n\n--- Attached file: \(f.name) ---\n```\n\(f.text)\n```"
-                }
-            }
-            if body.isEmpty { body = "See the attached image." }
-
-            transcripts[sid, default: []].append(ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name), isVoice: voice != nil))
-
-            // `/skill args` goes through the server's slash dispatcher, like the TUI; a few
-            // built-ins (/model, /reasoning, …) are per-session settings, not prompts.
-            var submitText = body
-            if body.hasPrefix("/") {
-                let name = String(body.dropFirst().prefix { !$0.isWhitespace })
-                let arg = String(body.dropFirst(1 + name.count)).trimmingCharacters(in: .whitespaces)
-                if Self.sessionSettingCommands.contains(name) {
-                    transcripts[sid, default: []].removeLast() // not a message; show the outcome instead
-                    if arg.isEmpty {
-                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "/\(name) needs a value"))
-                    } else if await setSessionConfig(name, arg) {
-                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "\(name) set to \(arg)"))
-                    }
-                    return
-                }
-                if skills?.skill(named: name) == nil, skills?.commands.contains(where: { $0.name == name }) == true {
-                    // Other built-ins (/help, /status, …) run server-side; the output is a notice.
-                    transcripts[sid, default: []].removeLast()
-                    do {
-                        let r = try await client.request("slash.exec", ["command": text, "session_id": sid], timeout: 120)
-                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: r["output"] as? String ?? "(no output)"))
-                    } catch {
-                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "/\(name): \(error.localizedDescription)"))
-                    }
-                    return
-                }
-                if let skills, skills.skill(named: name) != nil {
-                    let d = try await client.request("command.dispatch", ["name": name, "arg": arg, "session_id": sid], timeout: 60)
-                    switch d["type"] as? String {
-                    case "skill", "send":
-                        if let m = d["message"] as? String, !m.isEmpty { submitText = m }
-                        if let n = d["notice"] as? String, !n.isEmpty { transcripts[sid, default: []].append(ChatItem(kind: .notice, text: n)) }
-                    case "exec", "plugin":
-                        transcripts[sid, default: []].append(ChatItem(kind: .notice, text: d["output"] as? String ?? "(no output)"))
-                        return
-                    default:
-                        if let m = d["message"] as? String, !m.isEmpty { submitText = m }
-                    }
-                }
-            }
-
-            running.insert(sid)
-            expectingTurnStart.insert(sid)
-            var params: [String: Any] = ["session_id": sid, "text": submitText]
-            if let voice { params.merge(voice.params) { a, _ in a } }
-            let r = try await client.request("prompt.submit", params, timeout: 60)
-            if let status = r["status"] as? String, status == "queued" {
-                transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Queued behind the running turn"))
-            }
+            unsentBubble = nil
+            return true
         } catch {
             self.error = error.localizedDescription
-            if let sid = session?.liveId, transcripts[sid]?.last?.kind == .user { running.remove(sid) }
+            if let sid = session?.liveId { retractSend(in: sid) }
+            return false
+        }
+    }
+
+    /// Undo what a failed send left behind: its bubble, the running mark and the expected turn start.
+    private func retractSend(in sid: String) {
+        if let id = unsentBubble { transcripts[sid]?.removeAll { $0.id == id } }
+        unsentBubble = nil
+        running.remove(sid)
+        expectingTurnStart.remove(sid)
+    }
+
+    private func deliver(_ text: String, images: [UIImage], files: [(name: String, text: String)], skills: SkillsStore?, voice: VoiceTurn?, client: GatewayClient) async throws {
+        guard let session else { return }
+        let sid = session.liveId
+
+        // Attachments are staged server-side before the prompt.
+        for img in images {
+            guard let jpeg = ImageEncoding.jpegData(img) else { continue }
+            _ = try await client.request("image.attach_bytes", [
+                "session_id": sid, "content_base64": jpeg.base64EncodedString(), "filename": "photo.jpg", "ext": "jpg"], timeout: 120)
+        }
+        var body = text
+        for f in files {
+            let dataURL = "data:text/plain;base64," + Data(f.text.utf8).base64EncodedString()
+            if let r = try? await client.request("file.attach", ["session_id": sid, "data_url": dataURL, "name": f.name], timeout: 120),
+               let ref = r["ref_text"] as? String, !ref.isEmpty {
+                body += (body.isEmpty ? "" : "\n") + ref
+            } else {
+                body += "\n\n--- Attached file: \(f.name) ---\n```\n\(f.text)\n```"
+            }
+        }
+        if body.isEmpty { body = "See the attached image." }
+
+        let bubble = ChatItem(kind: .user, text: text.isEmpty ? body : text, images: images, fileNames: files.map(\.name), isVoice: voice != nil)
+        transcripts[sid, default: []].append(bubble)
+        unsentBubble = bubble.id
+
+        // `/skill args` goes through the server's slash dispatcher, like the TUI; a few
+        // built-ins (/model, /reasoning, …) are per-session settings, not prompts.
+        var submitText = body
+        if body.hasPrefix("/") {
+            let name = String(body.dropFirst().prefix { !$0.isWhitespace })
+            let arg = String(body.dropFirst(1 + name.count)).trimmingCharacters(in: .whitespaces)
+            if Self.sessionSettingCommands.contains(name) {
+                transcripts[sid, default: []].removeLast() // not a message; show the outcome instead
+                if arg.isEmpty {
+                    transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "/\(name) needs a value"))
+                } else if await setSessionConfig(name, arg) {
+                    transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "\(name) set to \(arg)"))
+                }
+                return
+            }
+            if skills?.skill(named: name) == nil, skills?.commands.contains(where: { $0.name == name }) == true {
+                // Other built-ins (/help, /status, …) run server-side; the output is a notice.
+                transcripts[sid, default: []].removeLast()
+                do {
+                    let r = try await client.request("slash.exec", ["command": text, "session_id": sid], timeout: 120)
+                    transcripts[sid, default: []].append(ChatItem(kind: .notice, text: r["output"] as? String ?? "(no output)"))
+                } catch let e as GatewayError where e.isSessionGone {
+                    throw e
+                } catch {
+                    transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "/\(name): \(error.localizedDescription)"))
+                }
+                return
+            }
+            if let skills, skills.skill(named: name) != nil {
+                let d = try await client.request("command.dispatch", ["name": name, "arg": arg, "session_id": sid], timeout: 60)
+                switch d["type"] as? String {
+                case "skill", "send":
+                    if let m = d["message"] as? String, !m.isEmpty { submitText = m }
+                    if let n = d["notice"] as? String, !n.isEmpty { transcripts[sid, default: []].append(ChatItem(kind: .notice, text: n)) }
+                case "exec", "plugin":
+                    transcripts[sid, default: []].append(ChatItem(kind: .notice, text: d["output"] as? String ?? "(no output)"))
+                    return
+                default:
+                    if let m = d["message"] as? String, !m.isEmpty { submitText = m }
+                }
+            }
+        }
+
+        running.insert(sid)
+        expectingTurnStart.insert(sid)
+        var params: [String: Any] = ["session_id": sid, "text": submitText]
+        if let voice { params.merge(voice.params) { a, _ in a } }
+        let r = try await client.request("prompt.submit", params, timeout: 60)
+        if let status = r["status"] as? String, status == "queued" {
+            transcripts[sid, default: []].append(ChatItem(kind: .notice, text: "Queued behind the running turn"))
         }
     }
 
@@ -309,6 +385,7 @@ final class ChatStore {
         let created = HermesSession(id: stored, liveId: liveId)
         transcripts[liveId] = transcripts[Self.draftKey] ?? []
         transcripts[Self.draftKey] = []
+        if let d = drafts.removeValue(forKey: Self.draftKey) { drafts[stored] = d }
         recordInfo(r["info"] as? [String: Any], for: liveId)
         session = created
         UserDefaults.standard.set(stored, forKey: Self.lastSessionKey)
@@ -353,41 +430,53 @@ final class ChatStore {
         return o
     }
 
-    /// Queue a message to run after the current turn (FIFO, never a live correction).
-    func enqueue(_ text: String, voice: VoiceTurn? = nil) async {
-        guard let client, let sid = session?.liveId, isRunning else { return }
+    /// Queue a message to run after the current turn (FIFO, never a live correction). False when
+    /// it was not queued (the turn ended meanwhile, or the call failed).
+    @discardableResult
+    func enqueue(_ text: String, voice: VoiceTurn? = nil) async -> Bool {
+        guard let client, let sid = session?.liveId, isRunning else { return false }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else { return true }
+        var item = ChatItem(kind: .user, text: text)
+        item.isQueued = true
+        item.isVoice = voice != nil
+        transcripts[sid, default: []].append(item)
+        let expecting = expectingTurnStart.insert(sid).inserted
         do {
-            var item = ChatItem(kind: .user, text: text)
-            item.isQueued = true
-            item.isVoice = voice != nil
-            transcripts[sid, default: []].append(item)
-            expectingTurnStart.insert(sid)
             var params: [String: Any] = ["session_id": sid, "text": text, "queued": true]
             if let voice { params.merge(voice.params) { a, _ in a } }
             _ = try await client.request("prompt.submit", params, timeout: 60)
+            return true
         } catch {
             self.error = error.localizedDescription
+            transcripts[sid]?.removeAll { $0.id == item.id }
+            if expecting { expectingTurnStart.remove(sid) }
+            return false
         }
     }
 
-    /// Replace the running turn's direction with new text (interrupts and continues).
-    func redirect(_ text: String, voice: VoiceTurn? = nil) async {
-        guard let client, let sid = session?.liveId, isRunning else { return }
+    /// Replace the running turn's direction with new text (interrupts and continues). False when
+    /// the call did not go through.
+    @discardableResult
+    func redirect(_ text: String, voice: VoiceTurn? = nil) async -> Bool {
+        guard let client, let sid = session?.liveId, isRunning else { return false }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else { return true }
+        var item = ChatItem(kind: .user, text: text)
+        item.isSteer = true
+        item.isVoice = voice != nil
+        transcripts[sid, default: []].append(item)
+        let expecting = expectingTurnStart.insert(sid).inserted
         do {
-            var item = ChatItem(kind: .user, text: text)
-            item.isSteer = true
-            item.isVoice = voice != nil
-            transcripts[sid, default: []].append(item)
-            expectingTurnStart.insert(sid)
             // session.redirect validates strictly and rejects the voice-live fields; the surface
             // set by the last prompt.submit still applies to the redirected turn.
             _ = try await client.request("session.redirect", ["session_id": sid, "text": text], timeout: 60)
+            return true
         } catch {
             self.error = error.localizedDescription
+            transcripts[sid]?.removeAll { $0.id == item.id }
+            if expecting { expectingTurnStart.remove(sid) }
+            return false
         }
     }
 
@@ -414,35 +503,83 @@ final class ChatStore {
         _ = try? await client.request("session.interrupt", ["session_id": sid], timeout: 30)
     }
 
-    // MARK: Server requests (approval, clarify)
+    // MARK: Server requests (approval, clarify, masked prompts)
 
     /// Returns false for request kinds this client does not handle.
     func handle(serverRequest r: ServerRequest) -> Bool {
+        // A request replayed after a reconnect may already be waiting here; keep the one shown.
         switch r.method {
         case "approval":
-            pendingApproval = ApprovalRequest(request: r)
-            return true
+            if !approvals.contains(where: { $0.id == r.id }) { approvals.append(ApprovalRequest(request: r)) }
         case "clarify":
-            pendingClarify = ClarifyRequest(request: r)
-            return true
+            if !clarifies.contains(where: { $0.id == r.id }) { clarifies.append(ClarifyRequest(request: r)) }
+        case "sudo", "secret", "vault.unlock_prompt":
+            if !secrets.contains(where: { $0.id == r.id }) { secrets.append(SecretRequest(request: r)) }
         default:
             return false
         }
+        return true
     }
 
-    func respond(to approval: ApprovalRequest, choice: String) {
-        approval.request?.respond(["choice": choice])
-        if pendingApproval == approval { pendingApproval = nil }
+    /// False when the answer could not be sent (no socket). The request then stays up to be
+    /// answered again, instead of the turn waiting on an answer that never left the phone.
+    @discardableResult
+    func respond(to approval: ApprovalRequest, choice: String) -> Bool {
+        guard approval.request?.respond(["choice": choice]) != false else { return unsent() }
+        requestError = nil
+        approvals.removeAll { $0.id == approval.id }
+        return true
     }
 
-    func respond(to clarify: ClarifyRequest, answer: String) {
-        clarify.request.respond(["answer": answer])
-        if pendingClarify == clarify { pendingClarify = nil }
+    @discardableResult
+    func respond(to clarify: ClarifyRequest, answer: String) -> Bool {
+        guard clarify.request.respond(["answer": answer]) else { return unsent() }
+        requestError = nil
+        clarifies.removeAll { $0.id == clarify.id }
+        return true
+    }
+
+    /// An empty value skips the prompt.
+    @discardableResult
+    func respond(to secret: SecretRequest, value: String) -> Bool {
+        guard secret.request.respond(["value": value]) else { return unsent() }
+        requestError = nil
+        secrets.removeAll { $0.id == secret.id }
+        return true
+    }
+
+    private func unsent() -> Bool {
+        requestError = "Not connected to Hermes. Answer again in a moment."
+        return false
+    }
+
+    /// After a resume or a replay the server lists what is still open for a session; anything
+    /// else held for it was answered on another client or timed out while the phone was away.
+    func reconcileRequests(session sid: String, open: Set<String>) {
+        approvals.removeAll { $0.sessionId == sid && !open.contains($0.id) }
+        clarifies.removeAll { $0.sessionId == sid && !open.contains($0.id) }
+        secrets.removeAll { $0.sessionId == sid && !open.contains($0.id) }
+    }
+
+    /// The gateway restarted: nothing it asked is waiting any more.
+    func dropRequests() {
+        approvals = []
+        clarifies = []
+        secrets = []
+        requestError = nil
+    }
+
+    private func dropRequest(id: String?) {
+        requestError = nil
+        approvals.removeAll { $0.id == id }
+        clarifies.removeAll { $0.id == id }
+        secrets.removeAll { $0.id == id }
     }
 
     // MARK: Events
 
     func handle(event e: GatewayEvent) {
+        if e.type == "request.cancel" { dropRequest(id: e.string("id")); return }
         guard let sid = e.sessionId else { return }
         var items: [ChatItem] { get { transcripts[sid] ?? [] } set { transcripts[sid] = newValue } }
         let isOpen = sid == currentKey
@@ -537,11 +674,6 @@ final class ChatStore {
 
         case "subagent.complete":
             items.append(ChatItem(kind: .notice, text: "Subagent \(e.string("status") ?? "done"): \(e.string("summary") ?? "")"))
-
-        case "request.cancel":
-            let id = e.string("id")
-            if pendingApproval?.id == id { pendingApproval = nil }
-            if pendingClarify?.id == id { pendingClarify = nil }
 
         default:
             break

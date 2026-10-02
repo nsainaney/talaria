@@ -4,8 +4,6 @@ import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(AppModel.self) private var model
-    @State private var draft = ""
-    @State private var attachments: [Attachment] = []
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showFiles = false
@@ -14,6 +12,16 @@ struct ChatView: View {
     @FocusState private var composerFocused: Bool
 
     private var chat: ChatStore { model.chat }
+
+    // The draft lives in the store, per chat, so it outlives this view (voice mode, going back).
+    private var draft: String {
+        get { chat.draft.text }
+        nonmutating set { chat.draft.text = newValue }
+    }
+    private var attachments: [Attachment] {
+        get { chat.draft.attachments }
+        nonmutating set { chat.draft.attachments = newValue }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +33,6 @@ struct ChatView: View {
             if draft.hasPrefix("/") { slashPopup }
             composer
         }
-        .onChange(of: model.chat.session?.id) { _, _ in draft = ""; attachments = [] }
         .task(id: slashQuery) {
             guard let q = slashQuery else { return }
             try? await Task.sleep(for: .milliseconds(150))
@@ -222,7 +229,7 @@ struct ChatView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !attachments.isEmpty { attachmentStrip }
-            TextField(chat.isRunning ? "Queue a message…" : "Message Hermes", text: $draft, axis: .vertical)
+            TextField(chat.isRunning ? "Queue a message…" : "Message Hermes", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
                 .lineLimit(1...8)
                 .font(.title3)
                 .focused($composerFocused)
@@ -296,11 +303,21 @@ struct ChatView: View {
     private func submitWhileRunning(_ mode: RunningSubmit) async {
         let text = draft
         draft = ""
+        let sent: Bool
         switch mode {
-        case .queue: await chat.enqueue(text)
-        case .steer: _ = await chat.steer(text)
-        case .redirect: await chat.redirect(text)
+        case .queue: sent = await chat.enqueue(text)
+        case .steer:
+            // A turn too far along refuses a steer; queue the text rather than drop it.
+            if await chat.steer(text) { sent = true } else { sent = await chat.enqueue(text) }
+        case .redirect: sent = await chat.redirect(text)
         }
+        if !sent { restore(text) }
+    }
+
+    /// A message that did not go out comes back to the composer, ahead of anything typed since.
+    private func restore(_ text: String, _ pending: [Attachment] = []) {
+        draft = draft.isEmpty ? text : text + "\n" + draft
+        attachments = pending + attachments
     }
 
     private func sendDraft() async {
@@ -316,7 +333,7 @@ struct ChatView: View {
             case .text(let name, let body): files.append((name, body))
             }
         }
-        await chat.send(text, images: images, files: files, skills: model.skills)
+        if await !chat.send(text, images: images, files: files, skills: model.skills) { restore(text, pending) }
     }
 }
 

@@ -71,7 +71,9 @@ extension GatewayAuth {
         return KanbanCardDetail(card: card, comments: comments, events: events)
     }
 
-    /// Creates a card. `triage` keeps it out of the dispatcher's reach until Proceed sets it ready.
+    /// Creates a card. `triage` keeps it out of the dispatcher's reach until Proceed sets it ready,
+    /// provided the server has `kanban.auto_decompose` off: by default the gateway rewrites and
+    /// starts triage cards itself.
     func kanbanCreate(board: String?, title: String, body: String, assignee: String?, triage: Bool, idempotencyKey: String?) async throws -> KanbanCard {
         var payload: [String: Any] = ["title": title, "body": body, "triage": triage]
         if let assignee { payload["assignee"] = assignee }
@@ -85,8 +87,23 @@ extension GatewayAuth {
 
     /// Any of title, body, assignee, status, priority. Status changes go through the board's own
     /// transition rules; a refused one comes back as HTTP 409 with the reason.
-    func kanbanPatch(_ id: String, board: String?, fields: [String: Any]) async throws {
-        _ = try await kanban("PATCH", "/tasks/\(id)", board: board, body: fields)
+    /// Returns the card as the board has it after the change.
+    @discardableResult
+    func kanbanPatch(_ id: String, board: String?, fields: [String: Any]) async throws -> KanbanCard? {
+        let obj = try await kanban("PATCH", "/tasks/\(id)", board: board, body: fields)
+        return (obj["task"] as? [String: Any]).flatMap { KanbanCard(row: $0, board: board ?? "") }
+    }
+
+    /// Ends a running card's worker and releases its claim. False when there was nothing to
+    /// reclaim, which the board answers with 409.
+    @discardableResult
+    func kanbanReclaim(_ id: String, board: String?, reason: String) async throws -> Bool {
+        do {
+            _ = try await kanban("POST", "/tasks/\(id)/reclaim", board: board, body: ["reason": reason])
+            return true
+        } catch GatewayAuthError.http(409, _) {
+            return false
+        }
     }
 
     func kanbanComment(_ id: String, board: String?, _ text: String) async throws {

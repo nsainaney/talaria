@@ -10,6 +10,7 @@ struct TasksView: View {
     @State private var ignored: TriageEntry?
     @State private var busy: Set<String> = []
     /// Source filter on the New section; "" is all. Kept across launches.
+    /// Sources to show, comma-separated; empty means all. Chips add or remove one each.
     @AppStorage("tasks.sourceFilter") private var sourceFilter = ""
     /// Drag handles on the New section.
     @State private var reordering = false
@@ -171,17 +172,30 @@ struct TasksView: View {
         return counts.keys.sorted { (order.firstIndex(of: $0) ?? 99, $0) < (order.firstIndex(of: $1) ?? 99, $1) }.map { ($0, counts[$0]!) }
     }
 
+    private var selectedSources: Set<String> { Set(sourceFilter.split(separator: ",").map(String.init)) }
+
+    /// The selection that applies now: chosen sources that have items. A selection with nothing
+    /// present shows everything rather than an empty list.
+    private var activeSources: Set<String> { selectedSources.intersection(sourceCounts.map(\.source)) }
+
     private var filteredNew: [TriageEntry] {
-        guard !sourceFilter.isEmpty, sourceCounts.contains(where: { $0.source == sourceFilter }) else { return tasks.new }
-        return tasks.new.filter { $0.item.source == sourceFilter }
+        let active = activeSources
+        guard !active.isEmpty else { return tasks.new }
+        return tasks.new.filter { active.contains($0.item.source) }
+    }
+
+    private func toggleSource(_ source: String) {
+        var chosen = selectedSources
+        if !chosen.insert(source).inserted { chosen.remove(source) }
+        sourceFilter = chosen.sorted().joined(separator: ",")
     }
 
     private var sourceChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                chip("All", tasks.new.count, on: sourceFilter.isEmpty || !sourceCounts.contains { $0.source == sourceFilter }) { sourceFilter = "" }
+                chip("All", tasks.new.count, on: activeSources.isEmpty) { sourceFilter = "" }
                 ForEach(sourceCounts, id: \.source) { sc in
-                    chip(Self.sourceName(sc.source), sc.count, on: sourceFilter == sc.source) { sourceFilter = sc.source }
+                    chip(Self.sourceName(sc.source), sc.count, on: selectedSources.contains(sc.source)) { toggleSource(sc.source) }
                 }
             }
         }

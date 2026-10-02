@@ -55,7 +55,7 @@ struct ChatScreen: View {
             }
             .task {
                 if let session {
-                    if model.chat.session?.id != session.id { await model.chat.open(session) }
+                    if model.chat.session?.id != session.id || model.chat.needsOpen { await model.chat.open(session) }
                 } else if model.chat.session != nil {
                     model.chat.startNewChat()
                 }

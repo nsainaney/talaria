@@ -32,6 +32,9 @@ final class AppModel {
         gateway.onEvent = { [weak self] e in self?.handle(event: e) }
         gateway.onServerRequest = { [weak self] r in self?.chat.handle(serverRequest: r) ?? false }
         gateway.onResync = { [weak self] sid in Task { await self?.chat.resync(liveId: sid) } }
+        gateway.onConnected = { [weak self] in Task { await self?.connected() } }
+        gateway.onOpenRequests = { [weak self] sid, open in self?.chat.reconcileRequests(session: sid, open: open) }
+        gateway.onServerRestart = { [weak self] in self?.chat.dropRequests() }
         chat.onSessionCreated = { [weak self] s in
             guard let self, !self.sessions.contains(where: { $0.id == s.id }) else { return }
             self.sessions.insert(s, at: 0)
@@ -43,21 +46,37 @@ final class AppModel {
         }
     }
 
-    /// Connect (or reconnect after settings change) and load lists once the socket is up.
+    /// Connect, or reconnect after a settings change. The lists load when the socket comes up.
     func connect() async {
         guard let auth = settings.auth else { gateway.disconnect(); return }
-        let wasConnected = gateway.isConnected
         gateway.connect(auth: auth)
-        if wasConnected && gateway.isConnected { return } // nothing changed; lists are already loaded
-        // Wait briefly for the first connection before loading lists; later reconnects reload via events.
-        for _ in 0..<50 where !gateway.isConnected { try? await Task.sleep(for: .milliseconds(200)) }
-        guard gateway.isConnected else { return }
-        serverVersion = try? await auth.status().version
+    }
+
+    /// The socket is up, for the first time or after a drop: reload what may have changed
+    /// meanwhile, however long the connection took.
+    private func connected() async {
+        serverVersion = try? await settings.auth?.status().version
         await refreshSessions()
         await skills.load(client: gateway)
-        if chat.session == nil, let last = chat.lastOpenedSessionId(), let s = sessions.first(where: { $0.id == last }) {
+        if chat.needsOpen {
+            await chat.reopenIfNeeded()
+        } else if chat.session == nil, let last = chat.lastOpenedSessionId(), let s = sessions.first(where: { $0.id == last }) {
             await chat.open(s)
         }
+    }
+
+    /// The app is in the foreground again: check the socket, and if it held, catch up on the
+    /// session list. A socket that did not answer reconnects and reloads through `connected()`.
+    func foreground() {
+        Task { if await gateway.wake() { await refreshSessions() } }
+    }
+
+    /// The chat a live session id belongs to, to name it on a request sheet.
+    func sessionTitle(live id: String?) -> String? {
+        guard let id else { return nil }
+        if let s = chat.session, s.liveId == id || s.id == id { return s.displayTitle }
+        let stored = liveElsewhere.first { $0.value.liveId == id }?.key
+        return sessions.first { $0.liveId == id || $0.id == id || $0.id == stored }?.displayTitle
     }
 
     func signOut() async {
@@ -154,7 +173,7 @@ final class AppModel {
         _ = try await gateway.request("session.delete", ["session_id": s.id], timeout: 30)
         sessions.removeAll { $0.id == s.id }
         liveElsewhere[s.id] = nil
-        chat.forget(sessionLiveId: s.liveId)
+        chat.forget(s)
         if chat.session?.id == s.id { chat.startNewChat() }
     }
 }

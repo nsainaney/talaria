@@ -24,7 +24,7 @@ In the app, open Settings (gear), enter the dashboard URL (e.g. `http://promethe
 | Attachments | `image.attach_bytes`, `file.attach` |
 | Skills | `skills.manage list` + `complete.slash` for descriptions; `/name args` runs through `command.dispatch` |
 | Streaming | events `message.start/delta/complete`, `reasoning.delta/available`, `tool.start/complete`, `status.update`, `session.title`, `sessions.changed` |
-| Prompts from the agent | server requests `approval` and `clarify`, answered in place |
+| Prompts from the agent | server requests `approval`, `clarify` and the masked prompts (`sudo`, `secret`, `vault.unlock_prompt`), answered in place; several can be open and queue |
 | Reconnect | per-session `seq` watermarks and `session.events.since` replay; `session.resume` re-attaches to a live turn |
 
 Pinned sessions and skills are stored locally in UserDefaults, not on the server (iCloud sync needs a paid team).

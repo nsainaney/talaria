@@ -91,6 +91,7 @@ struct ProposedCardView: View {
     @State private var busy = false
     @State private var done: String?
     @State private var error: String?
+    @State private var assignees: [String] = []
 
     init(card: ProposedCard) {
         self.card = card
@@ -181,24 +182,38 @@ struct ProposedCardView: View {
             case .issue:
                 error = "Creating issues is done on GitHub; open the repo and paste the title and body."
             }
+        } catch TasksStore.TaskError.needsAssignee {
+            self.error = TasksStore.TaskError.needsAssignee.localizedDescription
+            editing = true
         } catch {
             self.error = error.localizedDescription
         }
     }
 
     private var editor: some View {
-        NavigationStack {
+        let assignee = Binding(get: { draft.assignee ?? "" }, set: { draft.assignee = $0.isEmpty ? nil : $0 })
+        return NavigationStack {
             Form {
                 TextField("Title", text: $draft.title)
                 if draft.kind == .task {
-                    TextField("Assignee (hermes, coder-vm)", text: Binding(get: { draft.assignee ?? "" }, set: { draft.assignee = $0.isEmpty ? nil : $0 }))
-                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    if assignees.isEmpty {
+                        TextField("Assignee (hermes, coder-vm)", text: assignee)
+                            .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    } else {
+                        Picker("Assignee", selection: assignee) {
+                            Text("Choose").tag("")
+                            ForEach(assignees + (assignee.wrappedValue.isEmpty || assignees.contains(assignee.wrappedValue) ? [] : [assignee.wrappedValue]), id: \.self) {
+                                Text($0).tag($0)
+                            }
+                        }
+                    }
                 }
                 TextField(draft.kind == .reminder ? "Notes" : "Body", text: $draft.body, axis: .vertical).lineLimit(4...16)
             }
             .navigationTitle("Edit")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } } }
+            .task { if draft.kind == .task, assignees.isEmpty { assignees = await model.tasks.assignees() } }
         }
     }
 }

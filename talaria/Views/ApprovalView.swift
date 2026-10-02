@@ -15,6 +15,7 @@ struct ApprovalView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
+                RequestSource(sessionId: request.sessionId)
                 if let t = request.toolName, !t.isEmpty {
                     Text(t).font(.caption.monospaced()).foregroundStyle(.secondary)
                 }
@@ -60,6 +61,7 @@ struct ClarifyView: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
+                RequestSource(sessionId: request.sessionId)
                 Text(request.question)
                 if request.choices.isEmpty {
                     TextField("Your answer", text: $answer, axis: .vertical).lineLimit(1...5).textFieldStyle(.roundedBorder)
@@ -77,6 +79,49 @@ struct ClarifyView: View {
             .padding()
             .navigationTitle("Hermes is asking")
             .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+/// Popup for a masked value Hermes asks for (`sudo`, `secret`, a password manager's master
+/// password). Skip answers with nothing, which the tool takes as a refusal.
+struct SecretPromptView: View {
+    @Environment(AppModel.self) private var model
+    let request: SecretRequest
+    @State private var value = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                RequestSource(sessionId: request.sessionId)
+                Text(request.prompt)
+                SecureField("Value", text: $value).textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button { model.chat.respond(to: request, value: value) } label: { Text("Send").frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(value.isEmpty)
+                Button { model.chat.respond(to: request, value: "") } label: { Text("Skip").frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered)
+                Spacer()
+            }
+            .padding()
+            .navigationTitle(request.title)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+/// Which chat is asking, and why the last answer did not go out, if it did not.
+private struct RequestSource: View {
+    @Environment(AppModel.self) private var model
+    let sessionId: String?
+
+    var body: some View {
+        if let title = model.sessionTitle(live: sessionId) {
+            Label(title, systemImage: "bubble.left").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        if let e = model.chat.requestError {
+            Text(e).font(.footnote).foregroundStyle(.red)
         }
     }
 }

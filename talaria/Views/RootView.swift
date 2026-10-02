@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var path = NavigationPath()
     @State private var showSettings = false
     private let recorder = BackgroundRecorder.shared
@@ -34,7 +35,15 @@ struct RootView: View {
                 .interactiveDismissDisabled()
                 .presentationDetents([.medium, .large])
         }
+        .sheet(item: secretBinding) { secret in
+            SecretPromptView(request: secret)
+                .interactiveDismissDisabled()
+                .presentationDetents([.medium])
+        }
         .fullScreenCover(isPresented: $model.showRecorder) { RecordingModeView().environment(model) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.foreground() }
+        }
         .onChange(of: recorder.state.isActive) { _, active in
             if active { model.showRecorder = true }
         }
@@ -115,11 +124,16 @@ struct RootView: View {
             .frame(maxWidth: .infinity).padding(.vertical, 4).background(.bar)
     }
 
+    // The sheets follow the oldest open request; only an answer (or the server) removes it.
     private var approvalBinding: Binding<ApprovalRequest?> {
-        Binding(get: { model.chat.pendingApproval }, set: { if $0 == nil { model.chat.pendingApproval = nil } })
+        Binding(get: { model.chat.pendingApproval }, set: { _ in })
     }
 
     private var clarifyBinding: Binding<ClarifyRequest?> {
-        Binding(get: { model.chat.pendingClarify }, set: { if $0 == nil { model.chat.pendingClarify = nil } })
+        Binding(get: { model.chat.pendingClarify }, set: { _ in })
+    }
+
+    private var secretBinding: Binding<SecretRequest?> {
+        Binding(get: { model.chat.pendingSecret }, set: { _ in })
     }
 }

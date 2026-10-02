@@ -34,18 +34,21 @@ final class ServerRequest {
     let method: String
     let params: [String: Any]
     let replayed: Bool
-    private let reply: ([String: Any]?, (Int, String)?) -> Void
+    private let reply: ([String: Any]?, (Int, String)?) -> Bool
     private var settled = false
 
-    init(id: String, method: String, params: [String: Any], replayed: Bool, reply: @escaping ([String: Any]?, (Int, String)?) -> Void) {
+    init(id: String, method: String, params: [String: Any], replayed: Bool, reply: @escaping ([String: Any]?, (Int, String)?) -> Bool) {
         self.id = id; self.method = method; self.params = params; self.replayed = replayed; self.reply = reply
     }
 
     var sessionId: String? { params["session_id"] as? String }
     func string(_ key: String) -> String? { params[key] as? String }
 
-    func respond(_ result: [String: Any]) { guard !settled else { return }; settled = true; reply(result, nil) }
-    func fail(code: Int, message: String) { guard !settled else { return }; settled = true; reply(nil, (code, message)) }
+    /// False when there was no socket to send on; the request is still open and can be answered again.
+    @discardableResult
+    func respond(_ result: [String: Any]) -> Bool { guard !settled else { return true }; settled = reply(result, nil); return settled }
+    @discardableResult
+    func fail(code: Int, message: String) -> Bool { guard !settled else { return true }; settled = reply(nil, (code, message)); return settled }
 }
 
 enum GatewayError: LocalizedError {
@@ -61,6 +64,12 @@ enum GatewayError: LocalizedError {
         case .timeout(let m): return "Timed out: \(m)"
         case .badFrame: return "Unexpected reply from Hermes."
         }
+    }
+
+    /// The gateway no longer has the live session (reaped while idle); the stored one can be resumed.
+    var isSessionGone: Bool {
+        if case .rpc(let code, let message) = self { return code == 4001 && message.localizedCaseInsensitiveContains("session not found") }
+        return false
     }
 }
 
@@ -86,10 +95,20 @@ final class GatewayClient {
     var onServerRequest: ((ServerRequest) -> Bool)?
     /// A session's replay was truncated or the server restarted: reload that session's state.
     var onResync: ((String) -> Void)?
+    /// The socket is up and caught up, on the first connection and after every reconnect.
+    var onConnected: (() -> Void)?
+    /// After a replay: the ids of the server requests still open for a session.
+    var onOpenRequests: ((String, Set<String>) -> Void)?
+    /// The gateway process restarted; whatever it was waiting on is gone.
+    var onServerRestart: (() -> Void)?
 
     private var auth: GatewayAuth?
     private var socket: URLSessionWebSocketTask?
     private var runTask: Task<Void, Never>?
+    /// Which run loop owns the connection; a superseded loop sees a newer id and leaves.
+    private var loopId = 0
+    /// The current backoff wait, a task of its own so `wake()` can cut it short.
+    private var backoff: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     private var generation = 0
     private var nextId = 0
@@ -98,12 +117,15 @@ final class GatewayClient {
     private var replayEpoch: String?
     private var replayHold: [String: [GatewayEvent]]?
     private var wantConnected = false
+    /// The server tells "not shown on this client" (4404) from a refusal; newer than Hermes 0.21.
+    private var declinesNotShown = false
 
     private let urlSession = URLSession(configuration: .default)
 
     // MARK: Connection lifecycle
 
-    /// Idempotent: reconnects only when the credentials or server changed.
+    /// Idempotent: reconnects only when the credentials or server changed. After a sign-in
+    /// failure stopped the loop, calling it again makes one more attempt.
     func connect(auth: GatewayAuth) {
         let changed = self.auth.map { $0.baseURL != auth.baseURL || $0.username != auth.username || $0.password != auth.password } ?? true
         self.auth = auth
@@ -111,49 +133,91 @@ final class GatewayClient {
         if changed, runTask != nil {
             runTask?.cancel()
             runTask = nil
+            backoff?.cancel()
             closeSocket(reason: GatewayError.notConnected)
         }
         guard runTask == nil else { return }
-        runTask = Task { [weak self] in await self?.runLoop() }
+        loopId += 1
+        let id = loopId
+        runTask = Task { [weak self] in await self?.runLoop(id) }
     }
 
     func disconnect() {
         wantConnected = false
         runTask?.cancel()
         runTask = nil
+        backoff?.cancel()
         closeSocket(reason: GatewayError.notConnected)
         state = .disconnected
         lastSeenSeq = [:]
         replayEpoch = nil
     }
 
+    /// The app is in the foreground again. A backoff wait is cut short, and a socket that sat
+    /// through a suspension is proven with a quick ping rather than trusted. True when a live
+    /// socket answered.
+    func wake() async -> Bool {
+        guard wantConnected else { return false }
+        backoff?.cancel()
+        guard socket != nil, state == .connected else { return false }
+        let gen = generation
+        do {
+            _ = try await request("ping", timeout: 5)
+            return true
+        } catch {
+            if gen == generation { closeSocket(reason: GatewayError.timeout("wake")) }
+            return false
+        }
+    }
+
     /// Forget a session's watermark (after delete or when it is no longer shown).
     func forgetSession(_ id: String) { lastSeenSeq[id] = nil }
 
-    private func runLoop() async {
+    private func owns(_ id: Int) -> Bool { id == loopId && wantConnected && !Task.isCancelled }
+
+    private func runLoop(_ id: Int) async {
         var attempt = 0
-        while wantConnected && !Task.isCancelled {
+        while owns(id) {
             state = attempt == 0 ? .connecting : .reconnecting(attempt: attempt)
+            var wait: Double?
             do {
                 guard let auth else { throw GatewayAuthError.notConfigured }
                 let ticket = try await auth.wsTicket()
+                guard owns(id) else { break }
                 let closed = try await open(url: auth.webSocketURL(ticket: ticket))
+                guard owns(id) else { break }
                 attempt = 0
                 state = .connected
                 await replayAfterReconnect()
+                if owns(id) { onConnected?() }
                 await closed.value   // runs until the socket drops
+                guard owns(id) else { break }
+                state = .reconnecting(attempt: 1)
             } catch {
-                if !wantConnected { break }
+                guard owns(id) else { break }
                 state = .failed(error.localizedDescription)
-                if error is GatewayAuthError { attempt = max(attempt, 3) } // slow down on auth trouble
+                if let e = error as? GatewayAuthError {
+                    // Asking again cannot fix these and the sign-in endpoint is throttled, so stop
+                    // here; the banner keeps the reason until the person signs in again.
+                    if e.needsSignIn { break }
+                    if case .rateLimited = e { wait = 90 }
+                    attempt = max(attempt, 3) // slow down on auth trouble
+                }
             }
-            guard wantConnected else { break }
             attempt += 1
-            let delay = min(30.0, pow(2.0, Double(attempt - 1))) + Double.random(in: 0...0.5)
-            try? await Task.sleep(for: .seconds(delay))
+            await pause(wait ?? min(30.0, pow(2.0, Double(attempt - 1))) + Double.random(in: 0...0.5))
         }
-        runTask = nil
-        if !wantConnected { state = .disconnected }
+        if id == loopId {
+            runTask = nil
+            if !wantConnected { state = .disconnected }
+        }
+    }
+
+    /// The wait between attempts; ends early when `wake()` or a new `connect` cancels it.
+    private func pause(_ seconds: Double) async {
+        let sleep = Task<Void, Never> { do { try await Task.sleep(for: .seconds(seconds)) } catch {} }
+        backoff = sleep
+        await withTaskCancellationHandler { await sleep.value } onCancel: { sleep.cancel() }
     }
 
     /// Opens the socket and proves it with a `ping`; returns a task that completes when the socket closes.
@@ -169,7 +233,7 @@ final class GatewayClient {
             _ = try await request("ping", timeout: 45)
         } catch {
             closed.cancel()
-            closeSocket(reason: error)
+            if gen == generation { closeSocket(reason: error) } else { task.cancel(with: .goingAway, reason: nil) }
             throw error
         }
         startHeartbeat(gen: gen)
@@ -237,10 +301,23 @@ final class GatewayClient {
         return result as? [String: Any] ?? [:]
     }
 
-    private func send(frame: [String: Any]) {
-        guard let socket, let data = try? JSONSerialization.data(withJSONObject: frame) else { return }
+    /// False when there is no socket. A send that fails later means the socket died; the request
+    /// it answered is still open on the server and comes back with the replay.
+    @discardableResult
+    private func send(frame: [String: Any]) -> Bool {
+        guard let socket, let data = try? JSONSerialization.data(withJSONObject: frame) else { return false }
         let text = String(decoding: data, as: UTF8.self)
         Task { try? await socket.send(.string(text)) }
+        return true
+    }
+
+    private func serverRequest(id: String, method: String, params: [String: Any], replayed: Bool) -> ServerRequest {
+        ServerRequest(id: id, method: method, params: params, replayed: replayed) { [weak self] result, failure in
+            var reply: [String: Any] = ["jsonrpc": "2.0", "id": id]
+            if let result { reply["result"] = result }
+            if let failure { reply["error"] = ["code": failure.0, "message": failure.1] }
+            return self?.send(frame: reply) ?? false
+        }
     }
 
     // MARK: Inbound frames
@@ -249,12 +326,7 @@ final class GatewayClient {
         guard let frame = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { return }
         let method = frame["method"] as? String
         if let id = frame["id"] as? String, let method, method != "event" {
-            deliver(ServerRequest(id: id, method: method, params: frame["params"] as? [String: Any] ?? [:], replayed: false) { [weak self] result, failure in
-                var reply: [String: Any] = ["jsonrpc": "2.0", "id": id]
-                if let result { reply["result"] = result }
-                if let failure { reply["error"] = ["code": failure.0, "message": failure.1] }
-                self?.send(frame: reply)
-            })
+            deliver(serverRequest(id: id, method: method, params: frame["params"] as? [String: Any] ?? [:], replayed: false))
             return
         }
         if let idValue = frame["id"], !(idValue is NSNull) {
@@ -272,7 +344,10 @@ final class GatewayClient {
             if event.type == "gateway.ready" {
                 let epoch = event.string("replay_epoch")
                 if let epoch, let old = replayEpoch, old != epoch { adoptEpoch(epoch) } else if replayEpoch == nil { replayEpoch = epoch }
-                Task { _ = try? await request("client.capabilities", ["server_requests": true]) }
+                Task {
+                    let caps = try? await self.request("client.capabilities", ["server_requests": true])
+                    self.declinesNotShown = caps?["declines_not_shown"] as? Bool ?? false
+                }
             }
             if let hold = replayHold, let sid = event.sessionId, hold[sid] != nil, event.seq != nil {
                 replayHold?[sid]?.append(event)
@@ -282,8 +357,17 @@ final class GatewayClient {
         }
     }
 
+    /// Requests only a Hermes Desktop window can answer: its terminal, preview, window and tour.
+    private static let desktopOnly: Set<String> = ["terminal.read", "preview.read", "preview.act", "window.read", "tour"]
+
     private func deliver(_ request: ServerRequest) {
-        if onServerRequest?(request) != true {
+        guard onServerRequest?(request) != true else { return }
+        // Hermes 0.21 sends a request to the one client that holds the session, so refusing is
+        // right. A server that shares it between clients takes 4404 as "not shown here" and
+        // leaves it open for the Desktop window, where any other error would settle it.
+        if declinesNotShown, Self.desktopOnly.contains(request.method) {
+            request.fail(code: 4404, message: "not shown on this client")
+        } else {
             request.fail(code: -32601, message: "no handler for server request: \(request.method)")
         }
     }
@@ -293,12 +377,7 @@ final class GatewayClient {
         guard let entries = (result as? [String: Any])?["open_requests"] as? [[String: Any]] else { return }
         for e in entries {
             guard let id = e["id"] as? String, let method = e["method"] as? String else { continue }
-            deliver(ServerRequest(id: id, method: method, params: e["params"] as? [String: Any] ?? [:], replayed: true) { [weak self] result, failure in
-                var reply: [String: Any] = ["jsonrpc": "2.0", "id": id]
-                if let result { reply["result"] = result }
-                if let failure { reply["error"] = ["code": failure.0, "message": failure.1] }
-                self?.send(frame: reply)
-            })
+            deliver(serverRequest(id: id, method: method, params: e["params"] as? [String: Any] ?? [:], replayed: true))
         }
     }
 
@@ -316,6 +395,7 @@ final class GatewayClient {
         replayEpoch = epoch
         let sessions = Array(lastSeenSeq.keys)
         lastSeenSeq = [:]
+        onServerRestart?()
         for sid in sessions { onResync?(sid) }
     }
 
@@ -326,12 +406,19 @@ final class GatewayClient {
         replayHold = hold
         defer { flushReplayHold() }
         for (sid, lastSeen) in lastSeenSeq {
-            guard let result = try? await request("session.events.since", ["session_id": sid, "last_seen": lastSeen], timeout: 30) else { continue }
+            guard let result = try? await request("session.events.since", ["session_id": sid, "last_seen": lastSeen], timeout: 30) else {
+                // The gateway may have dropped the live session while we were away; reload it.
+                onResync?(sid)
+                continue
+            }
             if let epoch = result["epoch"] as? String, let old = replayEpoch, epoch != old {
                 adoptEpoch(epoch)
                 return
             }
             if result["truncated"] as? Bool == true { onResync?(sid) }
+            if let open = result["open_requests"] as? [[String: Any]] {
+                onOpenRequests?(sid, Set(open.compactMap { $0["id"] as? String }))
+            }
             for raw in result["events"] as? [[String: Any]] ?? [] {
                 if let e = GatewayEvent(params: raw, replayed: true) { dispatchIfNewer(e) }
             }

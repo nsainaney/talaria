@@ -154,7 +154,8 @@ final class TasksStore {
         new.removeAll { $0.id == entry.id }
     }
 
-    /// Agent: a bare card in the backlog (status triage, so nothing starts), then the decision.
+    /// Agent: a bare card in the backlog, then the decision. Status triage parks it only while
+    /// the server has `kanban.auto_decompose` off; by default the gateway starts triage cards.
     @discardableResult
     func agent(_ entry: TriageEntry) async throws -> KanbanCard {
         guard let auth = settings.auth else { throw GatewayAuthError.notConfigured }
@@ -206,6 +207,29 @@ final class TasksStore {
 
     // MARK: Cards
 
+    enum TaskError: LocalizedError {
+        case moved(String)
+        case needsAssignee
+
+        var errorDescription: String? {
+            switch self {
+            case .moved(let status): return "This card is already \(status); nothing was changed."
+            case .needsAssignee: return "Choose who runs this card."
+            }
+        }
+    }
+
+    /// Statuses from which a card may be set ready. The list's copy of a card can be stale, and
+    /// `ready` written over a card that has since started kills and requeues its worker, over a
+    /// done card reopens it; so every status write reads the card from the board first.
+    private static let notStarted: Set<String> = ["triage", "todo", "scheduled"]
+
+    /// Profiles the dispatcher can run a card as, for the assignee picker.
+    func assignees() async -> [String] {
+        guard let auth = settings.auth else { return [] }
+        return (try? await auth.kanbanAssignees(board)) ?? []
+    }
+
     func detail(_ card: KanbanCard) async throws -> KanbanCardDetail {
         guard let auth = settings.auth else { throw GatewayAuthError.notConfigured }
         return try await auth.kanbanTask(card.id, board: card.board.isEmpty ? nil : card.board)
@@ -221,14 +245,22 @@ final class TasksStore {
         if let c = proposed.closes, !c.isEmpty { body += "\n\nCloses: " + c }
         if !links.isEmpty { body += "\n\nLinks:\n" + links.map { "- " + $0 }.joined(separator: "\n") }
         let boardName = (proposed.board.map { $0.isEmpty || $0 == "current" ? nil : $0 } ?? nil) ?? board
+        let named = proposed.assignee.flatMap { $0.isEmpty ? nil : $0 }
         let card: KanbanCard
         if let id = proposed.id, !id.isEmpty {
-            try await auth.kanbanPatch(id, board: boardName, fields: ["title": proposed.title, "body": body, "assignee": proposed.assignee ?? ""])
-            try await auth.kanbanPatch(id, board: boardName, fields: ["status": "ready"])
-            card = try await auth.kanbanTask(id, board: boardName).card
+            let now = try await auth.kanbanTask(id, board: boardName).card
+            guard Self.notStarted.contains(now.status) else { throw TaskError.moved(now.status) }
+            // The dispatcher skips a ready card nobody is assigned to, so it would never start.
+            guard let assignee = named ?? now.assignee else { throw TaskError.needsAssignee }
+            try await auth.kanbanPatch(id, board: boardName, fields: ["title": proposed.title, "body": body, "assignee": assignee])
+            let ready = try await auth.kanbanPatch(id, board: boardName, fields: ["status": "ready"])
+            if let ready { card = ready } else { card = try await auth.kanbanTask(id, board: boardName).card }
         } else {
-            let created = try await auth.kanbanCreate(board: boardName, title: proposed.title, body: body, assignee: proposed.assignee, triage: false, idempotencyKey: nil)
-            card = created
+            guard let assignee = named else { throw TaskError.needsAssignee }
+            // The same card proposed in the same chat is one task: a second Proceed (the chat
+            // reopened, the block rendered again) gets the first card back instead of a copy.
+            let key = "talaria:chat:\(sessionId ?? "-"):\(proposed.title)"
+            card = try await auth.kanbanCreate(board: boardName, title: proposed.title, body: body, assignee: assignee, triage: false, idempotencyKey: key)
         }
         if let sid = sessionId { rememberSession(sid, for: card.id) }
         await refresh()
@@ -238,9 +270,14 @@ final class TasksStore {
     /// Start now: a queued card jumps the line; a held card is released.
     func start(_ card: KanbanCard) async throws {
         guard let auth = settings.auth else { throw GatewayAuthError.notConfigured }
-        let top = (backlog.map(\.priority).max() ?? 0) + 1
-        try await auth.kanbanPatch(card.id, board: card.board.isEmpty ? nil : card.board, fields: ["priority": top])
-        if card.status != "ready" { try await auth.kanbanPatch(card.id, board: card.board.isEmpty ? nil : card.board, fields: ["status": "ready"]) }
+        let boardName = card.board.isEmpty ? nil : card.board
+        let now = try await auth.kanbanTask(card.id, board: boardName).card
+        // Picked up or finished since the list loaded: it needs no start, only a fresh list.
+        if Self.notStarted.contains(now.status) || now.status == "ready" {
+            let top = (backlog.map(\.priority).max() ?? 0) + 1
+            try await auth.kanbanPatch(card.id, board: boardName, fields: ["priority": top])
+            if now.status != "ready" { try await auth.kanbanPatch(card.id, board: boardName, fields: ["status": "ready"]) }
+        }
         await refresh()
     }
 
@@ -272,14 +309,22 @@ final class TasksStore {
     /// Answer a blocked card: the reply is a comment, then the card is released to run again.
     func reply(_ card: KanbanCard, _ text: String) async throws {
         guard let auth = settings.auth else { throw GatewayAuthError.notConfigured }
-        try await auth.kanbanComment(card.id, board: card.board.isEmpty ? nil : card.board, text)
-        if card.status == "blocked" { try await auth.kanbanPatch(card.id, board: card.board.isEmpty ? nil : card.board, fields: ["status": "ready"]) }
+        let boardName = card.board.isEmpty ? nil : card.board
+        try await auth.kanbanComment(card.id, board: boardName, text)
+        // Released only if it is still blocked; the comment stands either way.
+        if try await auth.kanbanTask(card.id, board: boardName).card.status == "blocked" {
+            try await auth.kanbanPatch(card.id, board: boardName, fields: ["status": "ready"])
+        }
         await refresh()
     }
 
+    /// Stop: end the worker and release its claim, then hold the card. Holding alone clears the
+    /// claim but leaves the worker process running.
     func stop(_ card: KanbanCard) async throws {
         guard let auth = settings.auth else { throw GatewayAuthError.notConfigured }
-        try await auth.kanbanPatch(card.id, board: card.board.isEmpty ? nil : card.board, fields: ["status": "scheduled", "block_reason": "stopped from Talaria"])
+        let boardName = card.board.isEmpty ? nil : card.board
+        try await auth.kanbanReclaim(card.id, board: boardName, reason: "stopped from Talaria")
+        try await auth.kanbanPatch(card.id, board: boardName, fields: ["status": "scheduled", "block_reason": "stopped from Talaria"])
         await refresh()
     }
 

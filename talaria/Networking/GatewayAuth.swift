@@ -5,13 +5,26 @@ enum GatewayAuthError: LocalizedError {
     case badCredentials
     case http(Int, String)
     case noProvider
+    case rateLimited
+    case sessionRefused
 
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "Server, username and password are required."
         case .badCredentials: return "The dashboard rejected the username or password."
-        case .http(let code, let body): return "HTTP \(code): \(body)"
+        // A proxy's error page can be a whole HTML document; a line of it is enough.
+        case .http(let code, let body): return "HTTP \(code): \(body.prefix(200))"
         case .noProvider: return "The dashboard has no username/password sign-in enabled."
+        case .rateLimited: return "Too many sign-in attempts. The dashboard accepts another in a minute."
+        case .sessionRefused: return "Signed in, but the dashboard did not accept the session."
+        }
+    }
+
+    /// Trying again cannot fix it; the person has to sign in again.
+    var needsSignIn: Bool {
+        switch self {
+        case .notConfigured, .badCredentials, .noProvider: return true
+        case .http, .rateLimited, .sessionRefused: return false
         }
     }
 }
@@ -61,6 +74,7 @@ struct GatewayAuth {
         case 200..<300: return
         case 401: throw GatewayAuthError.badCredentials
         case 404: throw GatewayAuthError.noProvider
+        case 429: throw GatewayAuthError.rateLimited
         default: throw GatewayAuthError.http(code, String(data: data, encoding: .utf8) ?? "")
         }
     }
@@ -69,7 +83,8 @@ struct GatewayAuth {
     func wsTicket() async throws -> String {
         if let t = try await mintTicket() { return t }
         try await login()
-        guard let t = try await mintTicket() else { throw GatewayAuthError.badCredentials }
+        // The password was just accepted, so a second refusal is not a credentials problem.
+        guard let t = try await mintTicket() else { throw GatewayAuthError.sessionRefused }
         return t
     }
 
@@ -79,10 +94,11 @@ struct GatewayAuth {
         req.httpBody = Data("{}".utf8)
         let (data, resp) = try await session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 { return nil }
+        // A lapsed session shows as 401 or 403, or as a redirect that lands on the login page
+        // (HTML instead of a ticket). All of them mean: sign in and ask again.
+        if code == 401 || code == 403 { return nil }
         guard (200..<300).contains(code) else { throw GatewayAuthError.http(code, String(data: data, encoding: .utf8) ?? "") }
-        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        return obj?["ticket"] as? String
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["ticket"] as? String
     }
 
     /// Synthesize text with the dashboard's configured TTS provider; returns the audio bytes
