@@ -63,6 +63,10 @@ Spoken approvals and clarify answers are excluded. Compare medians.
 3. Endpoint pause, if `endpt` dominates: the constants in `VoiceController` (`endOfUtterance`,
    `unfinishedGrace`). Later, `SpeechAnalyzer` (iOS 26) to end on the recognizer's own finalized
    result instead of a timer.
+   **Result so far (2be02d7, 1.3 → 0.8 s):** endpoint 1.36 → 0.85 s on 20 runs. Control `hear`
+   3.21 → 3.15 only because the model round rose to 2.0 s that session. The benchmark rows from
+   that session are not comparable: the chat had answered the question before, so the model
+   stopped calling the tool. Re-run with a fresh chat per few runs, after the TTS tail change.
 4. A two-line excerpt per item in `context_triage` (nix-config, `mcp_facade.py`), so the benchmark
    question is one tool call.
 5. First-clause speech and sentence pipelining in `HermesSpeaker`, if `tts` dominates.
@@ -79,6 +83,12 @@ Spoken approvals and clarify answers are excluded. Compare medians.
   swap and 1.46 M major faults; the box had 15 GB swapped out with 1 GB free. Leading guess:
   idle torch pages swapped out between sessions, paged back mid-sentence. Try
   `memory.swap.max = 0` on the container (nix-config) and watch VmSwap on the PID during a stall.
+- Pocket TTS clips the last syllable of a sentence ("…October 4th, 2026." loses the end of
+  "twenty-six"); the audio from the container itself is already short, so neither Hermes nor the
+  phone can restore it. `--frames-after-eos 8` on the CLI fixes it (picked by ear over
+  `--eos-threshold -2` and 4 frames); the `/tts` route passes no EOS arguments, so nix-config
+  70f73fc patches the call from the container entrypoint. Costs ~0.6 s of tail per sentence, which
+  shifts `speak` and `reply_end` after the deploy.
 - First TTS stream of a session takes ~2.5 s to first audio, later ones ~0.2 s: a warm-up request
   at voice start would hide it.
 - The control question made the model run `terminal` to learn the date (a 2.7 s round): put the
