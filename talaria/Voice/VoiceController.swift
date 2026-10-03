@@ -349,7 +349,6 @@ final class VoiceController: VoiceChatCommands {
 
     /// One more sentence of the reply in progress; `speaker.finish()` follows the last one.
     private func say(_ text: String) {
-        if !speaker.isSpeaking { Bench.mark("first_sentence", "chars=\(text.count)") }
         speakingCue = false
         state = .speaking
         recentlySpoken.append((Date(), Set(Self.words(text))))

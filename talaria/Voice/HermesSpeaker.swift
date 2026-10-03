@@ -81,6 +81,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         // Markdown stripping can leave a bare "." or "-" as its own sentence; nothing to say.
         guard text.contains(where: { $0.isLetter || $0.isNumber }) else { return }
         if !isSpeaking {
+            Bench.mark("first_sentence", "chars=\(text.count)")
             Self.log.notice("speak: new reply, streamUnavailable=\(self.streamUnavailable) serverDown=\(self.serverDown)")
             heardAny = false
             markedFirstAudio = false
@@ -182,7 +183,8 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         case .start(let rate, let channels):
             streamFormat = (rate, channels)
         case .audio(let data):
-            armIdleFinish()
+            // After `finish()` the reply's end is known; the watchdog is for a reply whose end never comes.
+            if !replyFinished { armIdleFinish() }
             var bytes = streamRemainder + data
             let frameBytes = 2 * streamFormat.channels
             let whole = bytes.count - bytes.count % frameBytes
