@@ -56,7 +56,9 @@ final class VoiceController: VoiceChatCommands {
 
     /// Quiet gap after the transcript stops changing that ends an utterance. Longer while Hermes
     /// is already working, since nothing is waiting on the words and mid-thought pauses are common.
-    private var endOfUtterance: Duration { chat.isRunning ? .seconds(2) : .milliseconds(1300) }
+    /// Benchmark experiment 3 (2026-10-03): 1.3 s → 0.8 s; the trailing-connective grace below
+    /// still covers a sentence that is clearly unfinished.
+    private var endOfUtterance: Duration { chat.isRunning ? .seconds(2) : .milliseconds(800) }
     /// Extra wait granted, at most twice, when the sentence so far clearly is not finished.
     private let unfinishedGrace: Duration = .seconds(1)
     private static let trailingConnectives: Set<String> = [
