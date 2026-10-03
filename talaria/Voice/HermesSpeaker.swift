@@ -22,6 +22,8 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     var isPreparing: Bool { isSpeaking && !heardAny && !isPlaying && !fallback.isSpeaking }
     /// Something of this reply has reached the speaker.
     private var heardAny = false
+    /// The `first_audio` bench mark has been written for this reply.
+    private var markedFirstAudio = false
     /// `finish()` was called: no more sentences are coming for this reply.
     private var replyFinished = false
     var onFinished: (() -> Void)?
@@ -81,12 +83,13 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         if !isSpeaking {
             Self.log.notice("speak: new reply, streamUnavailable=\(self.streamUnavailable) serverDown=\(self.serverDown)")
             heardAny = false
+            markedFirstAudio = false
             replyFinished = false
             output?.setPhoneTalking(true)
         }
         isSpeaking = true
         armIdleFinish()
-        guard useServer, !serverDown, auth() != nil else { fallback.speak(text); return }
+        guard useServer, !serverDown, auth() != nil else { markFirstAudio("device"); fallback.speak(text); return }
         if !streamUnavailable, output != nil {
             waiting.append(text)
             startNextIfIdle()
@@ -107,6 +110,12 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
             Self.log.notice("speaker: 20 s idle, forcing finish")
             self?.finish()
         }
+    }
+
+    private func markFirstAudio(_ path: StaticString) {
+        guard !markedFirstAudio else { return }
+        markedFirstAudio = true
+        Bench.mark("first_audio", "path=\(path)")
     }
 
     /// The current reply has no more sentences. The sentences already queued still get spoken.
@@ -231,6 +240,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         guard let output else { return }
         let gen = generation
         queued += 1
+        markFirstAudio("stream")
         heardAny = true
         // The completion is `dataPlayedBack`: the samples have left the hardware, not merely
         // the queue. That is the only end-of-speech signal used anywhere.
@@ -282,6 +292,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
                 self.lastError = failure ?? "could not decode the server's audio"
                 let rest = [text] + self.pending
                 self.pending = []
+                self.markFirstAudio("device")
                 for t in rest { self.fallback.speak(t) }
             }
         }
@@ -330,6 +341,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         let buffer = ready.removeFirst()
         let gen = generation
         playerBusy = true
+        markFirstAudio("file")
         heardAny = true
         if let output {
             output.play(buffer) { [weak self] in
@@ -387,6 +399,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
               !fallback.isSpeaking else { return }
         idleFinishTask?.cancel()
         Self.log.notice("speaker: reply finished")
+        Bench.mark("reply_end")
         isSpeaking = false
         output?.setPhoneTalking(false)
         onFinished?()

@@ -98,7 +98,9 @@ Everything runs on the phone; nothing new is needed on the server.
   drop the feature entirely, delete the branch: `git checkout main && git branch -D voice`.
 
 Known limits: no speaker labels, English-first, and replies from Hermes take one to two seconds
-plus whatever its tools take. The voice engine is `SFSpeechRecognizer`; iOS 26's
+plus whatever its tools take. To measure a voice turn, pull the phone log and run
+`docs/benchmarks/voice-bench.py <archive>` (or `--collect <device>`); it prints one row per spoken turn
+from the `bench` log marks in `talaria/Voice/Bench.swift`. Protocol and results: `docs/benchmarks/`. The voice engine is `SFSpeechRecognizer`; iOS 26's
 `SpeechAnalyzer` would be the upgrade for long meetings.
 
 ## Inbox, Glass (branch `voice`)

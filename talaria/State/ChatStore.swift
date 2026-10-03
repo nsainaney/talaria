@@ -586,6 +586,7 @@ final class ChatStore {
 
         switch e.type {
         case "message.start":
+            if isOpen { Bench.mark("message_start") }
             running.insert(sid)
             statusLines[sid] = nil
             if let i = items.firstIndex(where: { $0.kind == .user && $0.isQueued }) { items[i].isQueued = false }
@@ -596,6 +597,7 @@ final class ChatStore {
             if isOpen { signal?(.turnStarted) }
 
         case "message.delta":
+            if isOpen, !(items.last?.kind == .assistant && items.last?.isStreaming == true) { Bench.mark("first_delta") }
             appendStreaming(kind: .assistant, e.string("text") ?? "", sessionId: sid)
             if isOpen, let t = e.string("text"), !t.isEmpty { signal?(.assistantDelta(t)) }
 
@@ -617,6 +619,7 @@ final class ChatStore {
             }
 
         case "tool.start":
+            if isOpen { Bench.mark("tool_start", "name=\(e.string("name") ?? "?")") }
             finishStreaming(kind: .reasoning, sessionId: sid)
             finishStreaming(kind: .assistant, sessionId: sid)
             let args = e.string("args_text") ?? e.string("preview")
@@ -624,6 +627,7 @@ final class ChatStore {
             items.append(ChatItem(kind: .tool, text: args ?? "", toolId: e.string("tool_id"), toolName: e.string("name"), isStreaming: true))
 
         case "tool.complete":
+            if isOpen { Bench.mark("tool_end", "dur=\(e.double("duration_s").map { String(format: "%.2f", $0) } ?? "?")") }
             let toolId = e.string("tool_id")
             if let i = items.lastIndex(where: { $0.kind == .tool && ($0.toolId == toolId || (toolId == nil && $0.isStreaming)) }) {
                 items[i].isStreaming = false
@@ -634,6 +638,7 @@ final class ChatStore {
             }
 
         case "message.complete":
+            if isOpen { Bench.mark("message_complete", "status=\(e.string("status") ?? "ok")") }
             finishAll(sessionId: sid)
             running.remove(sid)
             statusLines[sid] = nil

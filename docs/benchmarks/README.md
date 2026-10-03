@@ -1,0 +1,73 @@
+# Voice turn benchmark
+
+How long a spoken question takes, stage by stage, so each change to the voice loop can be
+measured against the one before. Started 2026-10-03.
+
+## The questions
+
+Benchmark, one lookup, two sentences to speak, a three-to-five sentence answer:
+
+> What came in today, and what's the first one about?
+
+Control, no tools, to separate the model's own latency from the lookup:
+
+> What day is it tomorrow?
+
+Ten runs of each, alternating, per configuration. Same phone, same room, same output route
+(headset or speaker) for a whole series, screen on, Wi-Fi. Note the model in the pill and the
+number of tool calls per run; a run with a different tool count took a different path and goes
+in its own bucket.
+
+## Measuring
+
+The app writes one log line per stage to the `bench` category (`talaria/Voice/Bench.swift`):
+`partial`, `utterance_end`, `submit`, `message_start`, `tool_start`/`tool_end`, `first_delta`,
+`first_sentence`, `first_audio`, `message_complete`, `reply_end`. After a session:
+
+    docs/benchmarks/voice-bench.py --collect Tyche --last 30m      # pulls the log (sudo) and prints the table
+    docs/benchmarks/voice-bench.py tyche.logarchive --csv > results/<date>-<config>.csv
+
+Columns, in seconds:
+
+| column | from → to | what it is |
+|---|---|---|
+| `endpt` | last word → utterance sent | the pause the phone waits through |
+| `start` | submit → `message.start` | Hermes taking the turn |
+| `tools` | count × summed tool time | the lookups (server-reported durations) |
+| `token` | `message.start` → first text | first token, includes the tools |
+| `tts` | first sentence ready → first sound | synthesis to speaker |
+| `hear` | last word → first sound | the silence you feel |
+| `speak` | first sound → reply over | reply length |
+
+Spoken approvals and clarify answers are excluded. Compare medians.
+
+## Setup as of the baseline
+
+- Hermes on prometheus: default model `glm-5.3-flash` on Ollama Cloud, `reasoning_effort: low`;
+  aliases `coder` (`glm-5.3`) and `fast` (`gpt-oss:20b`), also hosted. All in nix-config
+  `services/hermes.nix`.
+- Context engine: SQLite FTS5 + sqlite-vec hybrid search; `context_triage` returns every waiting
+  item (source, time, title, why, suggestion, id) in one call but no item text, so the benchmark
+  question needs a second call for "what is it about".
+- Talaria: end of utterance after 1.3 s without new words (2 s while Hermes works), up to two
+  1 s extensions when the sentence trails off; server voice (Pocket TTS) one stream per sentence;
+  voice model alias empty (so "fast model" only sets reasoning low, already the default).
+
+## Experiments, in order
+
+1. Baseline: the setup above, unchanged.
+2. Voice alias `fast` (Settings → voice model alias). No code; compares `gpt-oss:20b` with
+   `glm-5.3-flash`. Run the control too: a faster model that answers worse is not a win.
+3. Endpoint pause, if `endpt` dominates: the constants in `VoiceController` (`endOfUtterance`,
+   `unfinishedGrace`). Later, `SpeechAnalyzer` (iOS 26) to end on the recognizer's own finalized
+   result instead of a timer.
+4. A two-line excerpt per item in `context_triage` (nix-config, `mcp_facade.py`), so the benchmark
+   question is one tool call.
+5. First-clause speech and sentence pipelining in `HermesSpeaker`, if `tts` dominates.
+
+## Results
+
+Put each run's CSV in `results/` named `<date>-<config>.csv` and add a row here.
+
+| date | config | n | endpt | start | tools | token | tts | hear | speak |
+|---|---|---|---|---|---|---|---|---|---|

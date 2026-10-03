@@ -215,6 +215,7 @@ final class VoiceController: VoiceChatCommands {
         if speaker.isSpeaking { return }
         // Not while answering: the prompt just said "allow" and "deny", the very words expected back.
         if answering == .none, isEcho(trimmed) { return }
+        Bench.mark("partial", "chars=\(trimmed.count)")
         transcript = trimmed
         silenceTask?.cancel()
         let pause = endOfUtterance
@@ -236,6 +237,7 @@ final class VoiceController: VoiceChatCommands {
         transcript = ""
         recognizer.nextUtterance()
         guard !text.isEmpty, answering != .none || !isEcho(text) else { return }
+        Bench.mark("utterance_end", "chars=\(text.count) answering=\(answering != .none)")
         switch answering {
         case .approval: answerApproval(text)
         case .clarify: answerClarify(text)
@@ -261,6 +263,7 @@ final class VoiceController: VoiceChatCommands {
         let turn = ChatStore.VoiceTurn(context: chat.recentExchange(), interrupted: interruptedLastReply)
         interruptedLastReply = false
         if !chat.isRunning { await applyFastModelIfNeeded() }
+        Bench.mark("submit", chat.isRunning ? "while_running" : "")
         if chat.isRunning {
             // Add to what Hermes is doing rather than cutting it off; 'stop' is the way to interrupt.
             if await chat.steer(text, viaVoice: true) == false {
@@ -346,6 +349,7 @@ final class VoiceController: VoiceChatCommands {
 
     /// One more sentence of the reply in progress; `speaker.finish()` follows the last one.
     private func say(_ text: String) {
+        if !speaker.isSpeaking { Bench.mark("first_sentence", "chars=\(text.count)") }
         speakingCue = false
         state = .speaking
         recentlySpoken.append((Date(), Set(Self.words(text))))
