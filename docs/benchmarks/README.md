@@ -65,6 +65,18 @@ Spoken approvals and clarify answers are excluded. Compare medians.
    question is one tool call.
 5. First-clause speech and sentence pipelining in `HermesSpeaker`, if `tts` dominates.
 
+## Seen along the way, to fix after the series
+
+- 2026-10-03 smoke run: Pocket TTS stalled 41 s mid-reply on the second chunk (stream open, no
+  audio frames, then finished). The phone has no per-stream stall timeout, so it waited. Fix:
+  treat ~8 s without audio as a dropped stream (the per-sentence retry then re-synthesizes), and
+  split chunks on newlines and bullets with a ~200-char cap so a retry repeats little. Check the
+  pocket-tts container log on prometheus for the same minute to see which side stalled.
+- First TTS stream of a session takes ~2.5 s to first audio, later ones ~0.2 s: a warm-up request
+  at voice start would hide it.
+- The control question made the model run `terminal` to learn the date (a 2.7 s round): put the
+  date and time in `voice_context`.
+
 ## Results
 
 Put each run's CSV in `results/` named `<date>-<config>.csv` and add a row here.
