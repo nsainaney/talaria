@@ -54,6 +54,16 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
     private var streamUnavailable = false
     private var idleFinishTask: Task<Void, Never>?
     private static let maxAttempts = 5
+    /// Pocket TTS has gone silent mid-sentence for 40–55 s with the socket still open (seen
+    /// 2026-10-03). A stream that sends nothing for this long is treated as dropped, so the
+    /// per-sentence retry says the sentence again on a fresh socket. Frames normally arrive
+    /// several times a second once synthesis starts.
+    private static let stallSeconds: Double = 5
+    private var stallTask: Task<Void, Never>?
+
+    struct StallError: LocalizedError {
+        var errorDescription: String? { "the speech server stopped sending audio" }
+    }
 
     // Whole-file path
     private var pending: [String] = []
@@ -130,6 +140,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         Self.log.notice("speaker stop: isSpeaking=\(self.isSpeaking) stream=\(self.stream?.tag ?? 0) waiting=\(self.waiting.count) queued=\(self.queued)")
         generation += 1
         idleFinishTask?.cancel()
+        stallTask?.cancel()
         retryTask?.cancel()
         retryTask = nil
         stream?.stop()
@@ -176,13 +187,28 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
         streamRemainder = Data()
         s.send(text)
         s.finish()
+        armStall(s)
+    }
+
+    private func armStall(_ s: SpeakStream) {
+        stallTask?.cancel()
+        let gen = generation
+        stallTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.stallSeconds))
+            guard !Task.isCancelled, let self, gen == self.generation, self.stream === s else { return }
+            Self.log.error("speak-stream \(s.tag) stalled: nothing for \(Int(Self.stallSeconds)) s; saying the sentence again")
+            s.stop() // also tells the server to drop that synthesis; no further events from it
+            self.handle(.closed(StallError()), from: s)
+        }
     }
 
     private func handle(_ event: SpeakStream.Event, from s: SpeakStream) {
         switch event {
         case .start(let rate, let channels):
             streamFormat = (rate, channels)
+            armStall(s)
         case .audio(let data):
+            armStall(s)
             // After `finish()` the reply's end is known; the watchdog is for a reply whose end never comes.
             if !replyFinished { armIdleFinish() }
             var bytes = streamRemainder + data
@@ -195,12 +221,14 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
             schedule(buffer)
         case .end:
             // This sentence is fully synthesised (it may still be playing); on to the next.
+            stallTask?.cancel()
             stream = nil
             currentText = ""
             startNextIfIdle()
             checkFinished()
         case .fallback:
             Self.log.notice("speak-stream: server has no streaming TTS; using whole-file speech")
+            stallTask?.cancel()
             streamUnavailable = true
             stream = nil
             pending.append(contentsOf: [currentText] + waiting)
@@ -212,6 +240,7 @@ final class HermesSpeaker: NSObject, AVAudioPlayerDelegate {
             // The socket died before `end`: a network blip, most often. Say this sentence again
             // on a fresh stream once the connection is back; the sentences after it are still
             // waiting and untouched. Whatever of this sentence already played repeats briefly.
+            stallTask?.cancel()
             stream = nil
             streamRemainder = Data()
             Self.log.error("speak-stream dropped (attempt \(self.currentAttempts), audio=\(s.gotAudio)): \(error.localizedDescription, privacy: .public)")
