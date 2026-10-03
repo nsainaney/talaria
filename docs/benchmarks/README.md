@@ -79,7 +79,14 @@ Spoken approvals and clarify answers are excluded. Compare medians.
 
 ## Results
 
+Medians. `results/<file>.csv` has the runs; the first four rows of the baseline file (before 13:37)
+were the smoke run and are not counted. Baseline reading: model rounds 57% of the wait, the
+endpoint pause 32%, TTS 5%. Experiments 4 and 5 are dropped: the benchmark takes one tool call
+(0.02 s) and TTS is 0.2 s warm.
+
 Put each run's CSV in `results/` named `<date>-<config>.csv` and add a row here.
 
 | date | config | n | endpt | start | tools | token | tts | hear | speak |
 |---|---|---|---|---|---|---|---|---|---|
+| 2026-10-03 | baseline, benchmark (1 tool) | 11 | 1.37 | 0.04 | 1× 0.02 | 2.49 | 0.18 | 4.34 | 8.93 |
+| 2026-10-03 | baseline, control (no tool) | 9 | 1.36 | 0.04 | – | 1.54 | 0.20 | 3.21 | 2.57 |
