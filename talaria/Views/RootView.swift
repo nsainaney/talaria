@@ -3,68 +3,137 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showSidebar = false
-    @State private var showSkills = false
+    @State private var path = NavigationPath()
     @State private var showSettings = false
+    private let recorder = BackgroundRecorder.shared
 
     var body: some View {
-        NavigationStack {
-            ChatView(showSkills: $showSkills)
-                .navigationTitle(model.chat.session?.displayTitle ?? "New chat")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { withAnimation(.snappy) { showSidebar.toggle() } } label: {
-                            Image(systemName: "sidebar.left")
-                        }
-                    }
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { showSkills = true } label: { Image(systemName: "sparkles") }
-                        Button { model.chat.startNewChat() } label: { Image(systemName: "square.and.pencil") }
-                        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+        @Bindable var model = model
+        NavigationStack(path: $path) {
+            InboxView(path: $path)
+                .toolbarVisibility(.hidden, for: .navigationBar)
+                .safeAreaInset(edge: .top) { connectionBanner }
+                .navigationDestination(for: InboxDestination.self) { dest in
+                    switch dest {
+                    case .chat(let s): ChatScreen(session: s, startVoice: false)
+                    case .newChat(let voice): ChatScreen(session: nil, startVoice: voice)
+                    case .tasks: TasksView(path: $path)
+                    case .taskItem(let e): TaskItemView(path: $path, entry: e)
+                    case .taskCard(let c): TaskCardView(path: $path, card: c)
                     }
                 }
         }
-        .overlay { sidebarOverlay }
-        .sheet(isPresented: $showSkills) { SkillsView() }
-        .sheet(isPresented: $showSettings, onDismiss: { Task { await model.reconnect() } }) { SettingsView() }
+        .tint(Theme.accent)
+        .sheet(isPresented: $showSettings, onDismiss: { Task { await model.connect() } }) { SettingsView() }
         .sheet(item: approvalBinding) { approval in
             ApprovalView(request: approval)
                 .interactiveDismissDisabled()
                 .presentationDetents([.medium, .large])
         }
-        .task {
-            if model.settings.isConfigured {
-                await model.reconnect()
-                await model.chat.resumeIfNeeded()
-            } else {
-                showSettings = true
-            }
+        .sheet(item: clarifyBinding) { clarify in
+            ClarifyView(request: clarify)
+                .interactiveDismissDisabled()
+                .presentationDetents([.medium, .large])
         }
+        .sheet(item: secretBinding) { secret in
+            SecretPromptView(request: secret)
+                .interactiveDismissDisabled()
+                .presentationDetents([.medium])
+        }
+        .fullScreenCover(isPresented: $model.showRecorder) { RecordingModeView().environment(model) }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await model.chat.resumeIfNeeded() } }
+            if phase == .active { model.foreground() }
         }
-    }
-
-    /// Approval prompts are modal: the run is parked until the person answers.
-    private var approvalBinding: Binding<ApprovalRequest?> {
-        Binding(get: { model.chat.pendingApproval }, set: { if $0 == nil { model.chat.pendingApproval = nil } })
-    }
-
-    @ViewBuilder private var sidebarOverlay: some View {
-        if showSidebar {
-            ZStack(alignment: .leading) {
-                Color.black.opacity(0.35).ignoresSafeArea()
-                    .onTapGesture { withAnimation(.snappy) { showSidebar = false } }
-                SessionsSidebar { session in
-                    withAnimation(.snappy) { showSidebar = false }
-                    if let session { Task { await model.chat.open(session) } } else { model.chat.startNewChat() }
+        .onChange(of: recorder.state.isActive) { _, active in
+            if active { model.showRecorder = true }
+        }
+        .task {
+            if model.settings.isConfigured { await model.connect() } else { showSettings = true }
+        }
+        .onOpenURL { url in
+            guard url.scheme == "talaria" else { return }
+            switch url.host() {
+            case "record":
+                // From the widget: start recording and show the recorder.
+                model.showRecorder = true
+                if !recorder.state.isActive { Task { try? await recorder.start() } }
+            case "voice-chat":
+                // From the widget: a new voice chat. A running recording has the microphone, so
+                // it wins and the recorder is shown instead.
+                if recorder.state.isActive { model.showRecorder = true; return }
+                model.showRecorder = false
+                openNewChat(voice: true)
+            case "task":
+                // talaria://task/<board>/<id> or talaria://task/<id>: the card, refreshed from the board.
+                let parts = url.pathComponents.filter { $0 != "/" }
+                guard let id = parts.last else { return }
+                let board = parts.count >= 2 ? parts[0] : model.settings.kanbanBoard
+                Task {
+                    if let auth = model.settings.auth, let d = try? await auth.kanbanTask(id, board: board.isEmpty ? nil : board) {
+                        path = NavigationPath()
+                        path.append(InboxDestination.tasks)
+                        path.append(InboxDestination.taskCard(d.card))
+                    }
                 }
-                .frame(width: 300)
-                .background(.regularMaterial)
-                .transition(.move(edge: .leading))
+            case "chat":
+                guard let id = url.pathComponents.filter({ $0 != "/" }).first else { return }
+                let s = model.sessions.first { $0.id == id || $0.liveId == id } ?? HermesSession(id: id)
+                path = NavigationPath()
+                path.append(InboxDestination.chat(s))
+            case "item":
+                // talaria://item/<context id>: the item, if it is still waiting for triage; else the Tasks page.
+                let id = url.pathComponents.filter { $0 != "/" }.joined(separator: "/").removingPercentEncoding ?? ""
+                path = NavigationPath()
+                path.append(InboxDestination.tasks)
+                if let e = model.tasks.new.first(where: { $0.id == id }) { path.append(InboxDestination.taskItem(e)) }
+            case "tasks":
+                path = NavigationPath()
+                path.append(InboxDestination.tasks)
+            default:
+                break
             }
-            .zIndex(1)
         }
+    }
+
+    /// Push a fresh chat from the inbox, leaving any open chat first. The pop is given a moment to
+    /// finish so the old screen's disappearance does not stop the voice the new one starts.
+    private func openNewChat(voice: Bool) {
+        if path.isEmpty {
+            path.append(InboxDestination.newChat(voice: voice))
+        } else {
+            path = NavigationPath()
+            Task {
+                try? await Task.sleep(for: .milliseconds(400))
+                path.append(InboxDestination.newChat(voice: voice))
+            }
+        }
+    }
+
+    /// A one-line banner while the socket is down; hidden once connected.
+    @ViewBuilder private var connectionBanner: some View {
+        switch model.gateway.state {
+        case .connected, .disconnected: EmptyView()
+        case .connecting: banner("Connecting…", .secondary)
+        case .reconnecting(let n): banner("Reconnecting (\(n))…", .orange)
+        case .failed(let why): banner(why, .red)
+        }
+    }
+
+    private func banner(_ text: String, _ color: Color) -> some View {
+        Text(text).font(.footnote).foregroundStyle(color)
+            .frame(maxWidth: .infinity).padding(.vertical, 4).background(.bar)
+    }
+
+    // The sheets follow the oldest open request; only an answer (or the server) removes it.
+    private var approvalBinding: Binding<ApprovalRequest?> {
+        Binding(get: { model.chat.pendingApproval }, set: { _ in })
+    }
+
+    private var clarifyBinding: Binding<ClarifyRequest?> {
+        Binding(get: { model.chat.pendingClarify }, set: { _ in })
+    }
+
+    private var secretBinding: Binding<SecretRequest?> {
+        Binding(get: { model.chat.pendingSecret }, set: { _ in })
     }
 }

@@ -4,42 +4,113 @@ iOS chat client for a [hermes-agent](https://github.com/nousresearch/hermes-agen
 
 ## Server setup
 
-In `~/.hermes/.env`:
+Talaria speaks the `tui_gateway` JSON-RPC protocol over the dashboard's WebSocket, the same backend the Hermes TUI and Desktop app use. Run `hermes dashboard` bound to a reachable address with a username/password provider:
 
 ```
-API_SERVER_ENABLED=true
-API_SERVER_KEY=<your key>
-API_SERVER_HOST=0.0.0.0   # if the phone is on the LAN rather than the same machine
+HERMES_DASHBOARD_BASIC_AUTH_USERNAME=you
+HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=...
+HERMES_DASHBOARD_BASIC_AUTH_SECRET=<openssl rand -base64 32>
 ```
 
-Then `hermes gateway`. In the app, open Settings (gear) and enter the base URL (default `http://127.0.0.1:8642`) and the key.
+In the app, open Settings (gear), enter the dashboard URL (e.g. `http://prometheus:9119`), username and password, and Sign in. The password is stored in the Keychain; the dashboard session cookies renew themselves and the app re-signs in silently if they lapse. Sign out clears both. Requires Hermes 0.21 or newer.
 
-## Hermes endpoints used
+## Protocol
 
-| Purpose | Endpoint |
+| Purpose | Call |
 |---|---|
-| List / create / delete sessions | `GET|POST /api/sessions`, `DELETE /api/sessions/{id}` |
-| Session history | `GET /api/sessions/{id}/messages?order=oldest` |
-| Send a turn | `POST /v1/runs` `{input, session_id, conversation_history}` |
-| Stream the turn | `GET /v1/runs/{id}/events` (SSE; `message.delta`, `reasoning.available`, `tool.started`, `tool.completed`, `approval.request`, `run.completed` …) |
-| Poll a run after reconnect | `GET /v1/runs/{id}` |
-| Steer a running turn | `POST /v1/runs/{id}/steer` `{input}` |
-| Stop | `POST /v1/runs/{id}/stop` |
-| Rename / pin a session | `PATCH /api/sessions/{id}` `{title}` or `{pinned}` |
-| Answer a permission prompt | `POST /v1/runs/{id}/approval` `{choice, request_id?}` |
-| Skills | `GET /v1/skills` |
-| Connection test | `GET /health` |
+| Sign in / WebSocket ticket | `POST /auth/password-login`, `POST /api/auth/ws-ticket`, then `ws://host/api/ws?ticket=…` |
+| Sessions | `session.list`, `session.resume`, `session.create`, `session.title`, `session.close` + `session.delete` |
+| Turns | `prompt.submit`, `session.steer`, `session.interrupt` |
+| Attachments | `image.attach_bytes`, `file.attach` |
+| Skills | `skills.manage list` + `complete.slash` for descriptions; `/name args` runs through `command.dispatch` |
+| Streaming | events `message.start/delta/complete`, `reasoning.delta/available`, `tool.start/complete`, `status.update`, `session.title`, `sessions.changed` |
+| Prompts from the agent | server requests `approval`, `clarify` and the masked prompts (`sudo`, `secret`, `vault.unlock_prompt`), answered in place; several can be open and queue |
+| Reconnect | per-session `seq` watermarks and `session.events.since` replay; `session.resume` re-attaches to a live turn |
 
-The app sends its own transcript as `conversation_history` on every run. The Hermes build on the server (0.19.0) does not load a session's history for `/v1/runs` by itself, although newer builds do; supplying it explicitly works on both and the turn is still written to the session.
-
-Images are sent as `data:image/jpeg;base64,…` parts inside an OpenAI-style user message in the run `input`. Hermes drops a run's event queue once the client disconnects, so after backgrounding the app polls the run status and then reloads the session transcript.
-
-Skill invocation: the API server does not expand `/skill` slash commands (only the CLI and messaging gateways do), so `/name …` in the composer is sent as an explicit instruction asking the agent to load that skill.
+Pinned sessions and skills are stored locally in UserDefaults, not on the server (iCloud sync needs a paid team).
 
 ## Layout
 
-- `talaria/Networking` – `HermesClient` (REST + SSE), `SSEParser`, `Keychain`
-- `talaria/State` – `AppModel`, `ChatStore` (event stream → transcript rows), `SkillsStore` (search + pins), `ServerSettings`
-- `talaria/Views` – `RootView` (sessions drawer, toolbar), `ChatView` (transcript, composer, `/` popup), `ChatRow`, `SkillsView`, `SettingsView`, `ApprovalView`
+- `talaria/Networking` – `GatewayAuth` (dashboard login, tickets; `+Kanban` for the kanban plugin), `GatewayClient` (JSON-RPC over WebSocket, replay), `ContextClient` (the `talaria` plugin: triage, decisions, scan, SSE), `Keychain`, `ImageEncoding`
+- `talaria/State` – `AppModel`, `ChatStore` (events → transcript rows), `SkillsStore`, `PinStore`, `ServerSettings`, `TasksStore` (triage + board, the three answers), `RemindersWriter` (EventKit)
+- `talaria/Views` – `RootView`, `InboxView`, `ChatView`, `ChatRow` (+ `EntityCardView` for `card` blocks), `TasksView`, `TaskItemView`, `TaskCardView`, `SkillsView`, `SettingsView`, `ApprovalView` (+ `ClarifyView`)
 
-`Info.plist` (project root) allows plain-HTTP loads so LAN gateways work; deployment target is iOS 26.5.
+`Info.plist` allows plain-HTTP loads so LAN dashboards work; deployment target is iOS 26.5.
+
+## Tasks
+
+The Inbox has one row for Tasks. It opens two lists:
+
+- **Triage.** What came in, from the hermes-context engine through the dashboard's `talaria`
+  plugin (`/api/plugins/talaria/triage`): mail, iMessage, meetings and GitHub issues with your
+  name on them, screened for things to do, plus the Hermes backlog (kanban cards not started).
+  Three answers per item: **Me** writes an Apple Reminder on the phone with the source link in its
+  URL and `#source` in the notes; **Agent** files a bare kanban card in `triage`; **Ignore**. Every
+  answer is recorded as a decision in the context store. Swipe right for Me, left for Ignore or
+  Agent. The magnifier runs a scan; the engine screens each item version once and keeps its own
+  checkpoint. An Ignore shows a toast with *Why?*, which opens a chat running the
+  `screener-feedback` skill so the screener learns a rule.
+- **In progress.** What Hermes is doing, from the kanban plugin (`/api/plugins/kanban/board`),
+  then Done for the week. A blocked card shows its question and a reply field; the reply is a
+  comment plus a release back to ready.
+
+**Start** on a backlog card opens a chat with the card attached and the `task-grill` skill: Hermes
+looks up what it can, asks one question at a time, then posts the finished task as a fenced
+```` ```card ```` block. The app renders that block as a card with **Proceed**, which writes the
+title, body and assignee over the bare card and sets it ready for the dispatcher. `card` blocks with
+`type: reminder` render with *Add to Reminders*. Deep links: `talaria://tasks`,
+`talaria://task/<board>/<id>`, `talaria://chat/<session>`, `talaria://item/<context id>`.
+
+Server skills for this: copy `hermes/skills/task-grill/` and `hermes/skills/screener-feedback/` to
+`~/.hermes/skills/productivity/` on the Hermes host and reload skills. Without them the app sends a
+plain-language instruction instead. The context-engine side (candidates, decisions, scans, the
+`talaria` plugin) lives in nix-config under `services/hermes/context`.
+
+## Voice (branch `voice`)
+
+Everything runs on the phone; nothing new is needed on the server.
+
+- **Talk to Hermes.** Tap the microphone in the composer. Speech is recognised on the phone and
+  sent as text after a short pause; replies are spoken sentence by sentence as they stream, with
+  code blocks and markdown stripped. Talk over a reply and it goes quiet and listens; anything said while Hermes is working is
+  steered into the running turn (queued if the turn is too far along); say "stop" to interrupt. Permission and clarify requests are read aloud and take a spoken *allow*,
+  *always* or *deny* (the on-screen popup still works).
+- **Record a meeting.** Composer `+` menu → *Record meeting*. Audio is saved to
+  Files › Talaria › Meetings and transcribed live on the phone in timestamped segments,
+  including with the screen locked. *Send to Hermes* attaches the transcript with an
+  instruction. If a `meeting-digest` skill exists on the server the app invokes it instead.
+- **Server skill.** Copy `hermes/skills/meeting-digest/` to
+  `~/.hermes/skills/productivity/meeting-digest/` on the Hermes host (on prometheus that home is
+  `/mnt/space/services/hermes/state`) and reload skills. It uses the `memory` and
+  `cronjob_manage` tools and asks before creating reminders.
+- **Server voice (Pocket TTS).** With *Hermes voice* on in Settings, each spoken sentence is
+  fetched from the dashboard's `POST /api/audio/speak`, which runs the profile's TTS provider.
+  On prometheus that is Kyutai's reference Pocket TTS served warm by the nix-managed
+  `podman-pocket-tts` container on 127.0.0.1:8131, declared in nix-config
+  `services/hermes/pocket-tts.nix` together with the `say-http` wrapper Hermes calls and the
+  `tts` provider block (voice `vera`). A warm sentence takes 0.3 to 1 s. Change the voice by
+  editing `voice` there and deploying. `hermes/pocket-tts/` in this repo keeps the Dockerfile
+  and wrapper source for reference. If the
+  server cannot synthesize, the phone voice takes over for the rest of the reply.
+  (The `pocket-tts.cpp` bundle from the benchmark is still there as `say`, but its
+  end-of-speech detection babbles on short text, so it is no longer used.)
+- **Turning it off.** Settings → *Voice mode* hides the microphone and the meeting entry. To
+  drop the feature entirely, delete the branch: `git checkout main && git branch -D voice`.
+
+Known limits: no speaker labels, English-first, and replies from Hermes take one to two seconds
+plus whatever its tools take. The voice engine is `SFSpeechRecognizer`; iOS 26's
+`SpeechAnalyzer` would be the upgrade for long meetings.
+
+## Inbox, Glass (branch `voice`)
+
+The app follows the frozen design in `docs/design` (open `nav.html`). The root is the **Inbox**: one list of chats and recordings, newest first, with anything still running under Active; the header is search, settings, filter (All / Chats / Recordings); the footer starts a Chat, a Voice chat or a Record. A chat pushes in with its title editable in place and its settings (skills, model, pin, delete) behind the ellipsis; the waveform switches the same conversation to voice and the pencil back to text. A recording expands in place: scrubber, send or resend (with confirmation), skip 15, play, delete. The look is Glass: translucent panels with hairline borders, 12–14pt corners, no shadows; only your messages sit in blue bubbles.
+
+## Recorder widget and Speakr (branch `voice`)
+
+Settings › Speakr takes the Speakr server URL and an API token (created in Speakr under your account's API tokens; kept in the Keychain).
+
+**Talaria widget.** Add the "Talaria" widget to the Home Screen or Lock Screen, or the "Record to Speakr" control to Control Center. When nothing is running the widget shows two buttons: the waveform opens the app into a new voice chat with Hermes (`talaria://voice-chat`), and the mic opens it into a full-screen recording mode. During a voice chat the widget and a second Live Activity show what Hermes is doing (listening, thinking, speaking, paused) with Pause/Resume, a speaker button that cuts off what Hermes is saying right now, and End; these are `LiveActivityIntent`s (`Shared/VoiceChatIntents.swift`) performed in the app process, which stays alive during voice chat through the audio background mode. The recorder opens in the app because iOS does not let an app start the microphone from the background; Pause, Resume, Complete and Cancel there are large buttons, and the same actions on the widget and Live Activity are App Intents conforming to `LiveActivityIntent` and `AudioRecordingIntent`, which the system performs in the app process without opening it. Leaving the app and coming back returns to recording mode; the Active row in the inbox reopens it after Hide. Recording shows as a Live Activity in the Dynamic Island and on the Lock Screen with the same buttons. A phone or FaceTime call pauses the recording; it resumes on its own when the call ends. Stop uploads the file to Speakr on a background transfer (`POST /api/v1/recordings/upload`); the widget, Live Activity and the inbox show "Sent to Speakr as recording #N" or why it was not sent. The audio always stays in Files › Talaria › Meetings, including after Cancel, which only skips the upload; the app can still send a kept recording afterwards. 
+
+Both targets share the App Group `group.com.sainaney.talaria`; if Xcode complains about the provisioning profile, tick App Groups in Signing & Capabilities for both targets once so it registers the group.
+
+Layout: `Shared/` (state, intents, Live Activity attributes; compiled into both targets), `TalariaWidget/` (widget, Live Activity, control), `talaria/Recording/` (recorder, background uploader). The widget target's Info.plist is `TalariaWidget-Info.plist` at the repo root.

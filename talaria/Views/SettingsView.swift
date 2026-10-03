@@ -1,31 +1,113 @@
 import SwiftUI
+import AVFoundation
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var status: String?
-    @State private var testing = false
+    @State private var busy = false
+    @State private var speakrStatus: String?
+    @State private var speakrBusy = false
+    @State private var contextStatus: String?
+    @State private var contextBusy = false
+    @AppStorage(Speaker.voiceKey) private var voiceId = ""
 
     var body: some View {
         @Bindable var settings = model.settings
         NavigationStack {
             Form {
-                Section("Hermes server") {
-                    TextField("http://127.0.0.1:8642", text: $settings.serverURL)
+                Section("Hermes dashboard") {
+                    TextField("http://host:9119", text: $settings.serverURL)
                         .keyboardType(.URL).textContentType(.URL)
                         .autocorrectionDisabled().textInputAutocapitalization(.never)
-                    SecureField("API_SERVER_KEY", text: $settings.apiKey)
+                    TextField("Username", text: $settings.username)
+                        .textContentType(.username).autocorrectionDisabled().textInputAutocapitalization(.never)
+                    SecureField("Password", text: $settings.password)
+                        .textContentType(.password)
                 }
                 Section {
                     Button {
-                        Task { await test() }
+                        Task { await signIn() }
                     } label: {
-                        HStack { Text("Test connection"); Spacer(); if testing { ProgressView() } }
+                        HStack { Text("Sign in"); Spacer(); if busy { ProgressView() } }
                     }
-                    .disabled(!settings.isConfigured || testing)
+                    .disabled(!settings.isConfigured || busy)
                     if let status { Text(status).font(.footnote) }
+                    HStack {
+                        Text("Connection")
+                        Spacer()
+                        Text(connectionLabel).foregroundStyle(.secondary)
+                    }
+                    if let v = model.serverVersion {
+                        HStack { Text("Hermes version"); Spacer(); Text(v).foregroundStyle(.secondary) }
+                    }
                 } footer: {
-                    Text("Enable the API server in ~/.hermes/.env with API_SERVER_ENABLED=true and API_SERVER_KEY, then run `hermes gateway`.")
+                    Text("The dashboard must run with a username/password provider (HERMES_DASHBOARD_BASIC_AUTH_*) and be reachable from this device. The password is kept in the Keychain; the dashboard session renews itself silently.")
+                }
+                Section {
+                    TextField("http://host:8899", text: $settings.speakrURL)
+                        .keyboardType(.URL).textContentType(.URL)
+                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    SecureField("API token", text: $settings.speakrToken)
+                    Button {
+                        Task { await testSpeakr() }
+                    } label: {
+                        HStack {
+                            Text("Test connection")
+                            Spacer()
+                            if speakrBusy { ProgressView() }
+                        }
+                    }
+                    .disabled(speakrBusy || settings.speakr == nil)
+                    if let speakrStatus {
+                        Text(speakrStatus).font(.footnote).foregroundStyle(speakrStatus.hasPrefix("Connected") ? .green : .red)
+                    }
+                } header: {
+                    Text("Speakr (meeting recordings)")
+                } footer: {
+                    Text("Recordings from the Recorder widget and meetings are uploaded here for transcription and summary. Create the token in Speakr under your account's API tokens; it is kept in the Keychain.")
+                }
+                Section {
+                    TextField("Kanban board (blank: current)", text: $settings.kanbanBoard)
+                        .autocorrectionDisabled().textInputAutocapitalization(.never)
+                    Button {
+                        Task { await testContext() }
+                    } label: {
+                        HStack { Text("Test tasks"); Spacer(); if contextBusy { ProgressView() } }
+                    }
+                    .disabled(contextBusy || settings.context == nil)
+                    if let contextStatus {
+                        Text(contextStatus).font(.footnote).foregroundStyle(contextStatus.hasPrefix("Connected") ? .green : .red)
+                    }
+                } header: {
+                    Text("Tasks")
+                } footer: {
+                    Text("The triage list comes from the hermes-context engine through the dashboard's talaria plugin, with the sign-in above: what arrived in mail, iMessage, meetings and GitHub, screened for things to do. Cards come from the kanban plugin.")
+                }
+                Section {
+                    Toggle("Voice mode", isOn: $settings.voiceEnabled)
+                    if settings.voiceEnabled {
+                        Toggle("Hermes voice (server)", isOn: $settings.serverVoice)
+                        Toggle("Low reasoning while talking", isOn: $settings.voiceFastModel)
+                        if settings.voiceFastModel {
+                            TextField("Model alias (optional, e.g. fast)", text: $settings.voiceModelAlias)
+                                .autocorrectionDisabled().textInputAutocapitalization(.never)
+                        }
+                        Picker(settings.serverVoice ? "Fallback voice" : "Voice", selection: $voiceId) {
+                            Text("Automatic (best installed)").tag("")
+                            ForEach(Speaker.availableVoices(), id: \.identifier) { v in
+                                Text("\(v.name) · \(qualityLabel(v.quality))").tag(v.identifier)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Listening happens on this phone. With Hermes voice on, replies are synthesized by the TTS provider configured on your Hermes server and the phone voice is used only if that fails. The mic is muted while Hermes talks; use the Quiet button to cut a reply off. Permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices. Low reasoning: while voice mode is on the session answers with less thinking time and switches back afterwards. Naming a model alias also swaps the model for the whole turn, tools included, so leave it empty unless you want the faster, weaker model doing the work.")
+                }
+                Section {
+                    Button("Sign out", role: .destructive) {
+                        Task { await model.signOut(); status = "Signed out"; }
+                    }
+                    .disabled(settings.password.isEmpty)
                 }
             }
             .navigationTitle("Settings")
@@ -34,15 +116,67 @@ struct SettingsView: View {
         }
     }
 
-    private func test() async {
-        guard let client = model.settings.client else { return }
-        testing = true
-        defer { testing = false }
+    private func qualityLabel(_ q: AVSpeechSynthesisVoiceQuality) -> String {
+        switch q {
+        case .premium: return "Premium"
+        case .enhanced: return "Enhanced"
+        default: return "Default"
+        }
+    }
+
+    private var connectionLabel: String {
+        switch model.gateway.state {
+        case .disconnected: return "Not connected"
+        case .connecting: return "Connecting…"
+        case .connected: return "Connected"
+        case .reconnecting(let n): return "Reconnecting (\(n))…"
+        case .failed(let why): return "Failed: \(why)"
+        }
+    }
+
+    private func testSpeakr() async {
+        guard let client = model.settings.speakr else { return }
+        speakrBusy = true
+        defer { speakrBusy = false }
         do {
-            let ok = try await client.health()
-            // /health may be unauthenticated; also touch an authenticated route so a bad key shows up here.
-            _ = try await client.listSessions(limit: 1)
-            status = ok ? "Connected" : "Server responded but reported a non-ok status"
+            let user = try await client.whoAmI()
+            speakrStatus = "Connected as \(user)"
+        } catch let e as URLError {
+            speakrStatus = "\(e.localizedDescription) (URLError \(e.code.rawValue))"
+        } catch {
+            speakrStatus = error.localizedDescription
+        }
+    }
+
+    private func testContext() async {
+        guard let client = model.settings.context else { return }
+        contextBusy = true
+        defer { contextBusy = false }
+        do {
+            let t = try await client.triage()
+            contextStatus = "Connected · \(t.new.count) to triage · \(t.backlog.count) in the backlog"
+        } catch let e as URLError {
+            contextStatus = "\(e.localizedDescription) (URLError \(e.code.rawValue))"
+        } catch {
+            contextStatus = error.localizedDescription
+        }
+    }
+
+    private func signIn() async {
+        guard let auth = model.settings.auth else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let s = try await auth.status()
+            if s.authRequired && !s.providers.contains("basic") {
+                status = "Dashboard has no username/password provider (has: \(s.providers.joined(separator: ", ")))."
+                return
+            }
+            try await auth.login()
+            status = "Signed in" + (s.version.map { " · Hermes \($0)" } ?? "")
+            await model.connect()
+        } catch let e as URLError {
+            status = "\(e.localizedDescription) (URLError \(e.code.rawValue))" + (e.failingURL.map { " \($0.absoluteString)" } ?? "")
         } catch {
             status = error.localizedDescription
         }

@@ -23,39 +23,30 @@ struct ChatRow: View {
                             .background(Color(.secondarySystemBackground), in: Capsule())
                     }
                     if !item.text.isEmpty {
+                        let muted = item.isSteer || item.isQueued
                         VStack(alignment: .leading, spacing: 2) {
                             if item.isSteer {
                                 Label("Steer", systemImage: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+                            } else if item.isQueued {
+                                Label("Queued", systemImage: "clock").font(.caption2).foregroundStyle(.secondary)
+                            } else if item.isVoice {
+                                Label("Voice", systemImage: "waveform").font(.caption2).foregroundStyle(.white.opacity(0.8))
+                            } else if item.isRemote {
+                                Label("From another client", systemImage: "desktopcomputer").font(.caption2).foregroundStyle(.white.opacity(0.8))
                             }
                             Text(verbatim: item.text).textSelection(.enabled)
                         }
+                        .foregroundStyle(muted ? Color.primary : Color.white)
                         .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(Color.accentColor.opacity(item.isSteer ? 0.10 : 0.18), in: RoundedRectangle(cornerRadius: 16))
+                        .background(muted ? Color.accentColor.opacity(0.12) : Color.accentColor,
+                                    in: UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14, bottomTrailingRadius: 4, topTrailingRadius: 14, style: .continuous))
                     }
                 }
             }
             .padding(.horizontal)
 
         case .assistant:
-            Markdown(item.text)
-                .markdownTextStyle(\.code) {
-                    FontFamilyVariant(.monospaced)
-                    FontSize(.em(0.9))
-                    BackgroundColor(Color(.secondarySystemBackground))
-                }
-                .markdownBlockStyle(\.codeBlock) { configuration in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        configuration.label
-                            .markdownTextStyle {
-                                FontFamilyVariant(.monospaced)
-                                FontSize(.em(0.85))
-                            }
-                            .padding(12)
-                    }
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-                    .markdownMargin(top: 4, bottom: 8)
-                }
-                .textSelection(.enabled)
+            AssistantBody(text: item.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
 

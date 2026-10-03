@@ -44,10 +44,10 @@ struct SkillsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { Task { await model.skills.load(client: model.client) } } label: { Image(systemName: "arrow.clockwise") }
+                    Button { Task { await model.skills.load(client: model.gateway) } } label: { Image(systemName: "arrow.clockwise") }
                 }
             }
-            .task { if model.skills.skills.isEmpty { await model.skills.load(client: model.client) } }
+            .task { if model.skills.skills.isEmpty { await model.skills.load(client: model.gateway) } }
         }
     }
 }

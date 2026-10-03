@@ -1,0 +1,32 @@
+:root { --big-r: 28px; --round-r: 11px; --page-bg:#e9e4dc; --bg:#f7f3ec; --text:#2b2723; --muted:#8a8078; --surface:#fffdf9; --glass:#fffdf9; --field:rgba(60,40,20,.07); --line:rgba(60,40,20,.10); --accent:#2f7d5b; --accent-soft:rgba(47,125,91,.12); --rec:#e5603f; --rec-soft:rgba(229,96,63,.14); --user:#dfeee6; --dim:rgba(40,30,20,.35); }
+.phone { background: var(--bg); }
+.nav { margin: 4px 12px 8px; padding: 8px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.nav .title { font-weight: 700; }
+.msg.user .bubble { background: var(--user); color: var(--text); border-radius: 14px 14px 4px 14px; border: 1px solid var(--line); }
+.msg.assistant { max-width: 100%; } .msg.assistant .bubble { padding: 2px 4px; }
+.bubble pre, .bubble code { background: var(--field); border-radius: 8px; }
+.tool { background: var(--field); border-radius: 8px; color: var(--muted); }
+.card.approval { background: var(--surface); border-radius: 14px; border: 1px solid var(--line); }
+.card .h { color: var(--rec); }
+.card .cmd { background: var(--field); border-radius: 10px; }
+.card .actions button { border-radius: 10px; background: var(--field); color: var(--text); }
+.card .actions .deny { color: var(--rec); } .card .actions .always { background: var(--accent); color: #fff; }
+.composer .field { background: var(--surface); border-radius: 12px; border: 1px solid var(--line); }
+.pill { background: var(--surface); border-radius: 8px; border: 1px solid var(--line); } .pill .dot { background: var(--accent); }
+.round.plus { background: var(--surface); color: var(--text); border: 1px solid var(--line); }
+.round.sendb { background: var(--accent); color: #fff; }
+.live { color: var(--rec); }
+.rec .timer { font-weight: 300; }
+.big.pause { background: #e9a04a; } .big.resume { background: var(--rec); } .big.done { background: var(--accent); } .big.cancel { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+.done-btn { color: var(--accent); font-weight: 700; font-size: 16px; }
+.phone.locked { background: linear-gradient(170deg, #f1d9c8, #e6cbb6 50%, #cfd6c2); color: #2b2723; }
+.la, .widget { background: rgba(255,253,249,.82); backdrop-filter: blur(20px); border: 1px solid var(--line); border-radius: 16px; }
+.la .round, .widget .round { background: var(--field); color: var(--text); }
+.la .round.done, .widget .round.done { background: var(--accent); color: #fff; } .la .round.pause, .widget .round.pause { background: #e9a04a; color: #fff; }
+.widget .mic { background: var(--rec); border-radius: 18px; }
+.fab .b { background: var(--accent); } .fab .b.voice { background: var(--surface); color: var(--accent); border: 1px solid var(--line); } .fab .b.mic { background: var(--rec); }
+.tabbar .tab.on { background: var(--accent); }
+.round.play { background: var(--accent); color: #fff; }
+.iconbtn.sm.on { background: var(--accent); }
+.vtext.you, .vh.you, .caret { color: var(--accent); } .caret { background: var(--accent); }
+.vbuttons .big.pause { background: #e9a04a; }

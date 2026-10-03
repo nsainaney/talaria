@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Talaria design variants</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;background:#f3f3f5;color:#111}
+main{max-width:920px;margin:0 auto;padding:48px 24px}
+h1{font-size:28px;margin:0 0 6px} p.lead{color:#555;margin:0 0 32px}
+.v{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+a.card{display:block;text-decoration:none;color:inherit;border-radius:16px;padding:22px;background:#fff;border:1px solid rgba(0,0,0,.08)}
+a.card:hover{border-color:#111}
+a.card h2{margin:0 0 6px;font-size:18px} a.card p{margin:0;color:#555;font-size:14px;line-height:1.45}
+.sw{display:flex;gap:6px;margin-top:12px} .sw i{width:22px;height:22px;border-radius:6px;display:block;border:1px solid rgba(0,0,0,.1)}
+section{margin-top:40px;font-size:14px;color:#444;line-height:1.5} code{background:#e8e8ec;padding:2px 5px;border-radius:4px}
+</style></head><body><main>
+<h1>Talaria design variants</h1>
+<p class="lead">Requirements are frozen (see Navigation). Four visual directions for the frozen screens: inbox, text chat, voice chat, a recording expanded in place, the recorder, and the Lock Screen. Same content everywhere, only the styling changes.</p>
+<div class="v">
+  <a class="card" href="glass.html"><h2>Glass · chosen</h2><p>iOS 26 layers over a soft tint, tight corners, no shadows. The reference for everything below.</p><div class="sw"><i style="background:#eef1fb"></i><i style="background:#fff"></i><i style="background:#3e63f0"></i><i style="background:#ff453a"></i></div></a>
+  <a class="card" href="paper.html"><h2>Paper</h2><p>Warm off-white with flat cards and hairlines, green accent, coral for recording. Same rules as Glass, warmer mood.</p><div class="sw"><i style="background:#f7f3ec"></i><i style="background:#fffdf9"></i><i style="background:#2f7d5b"></i><i style="background:#e5603f"></i></div></a>
+  <a class="card" href="slate.html"><h2>Slate</h2><p>Dark graphite with an indigo accent. Calm dark mode rather than a terminal: no mono, no glow, the same layout as Glass. <a href="slate-light.html">Light version →</a></p><div class="sw"><i style="background:#15181e"></i><i style="background:#1e222a"></i><i style="background:#7c8cff"></i><i style="background:#ff6b5c"></i></div></a>
+  <a class="card" href="tide.html"><h2>Tide</h2><p>Cool light gray, one teal accent, flat and crisp with slightly smaller radii. The least decorated of the four.</p><div class="sw"><i style="background:#f2f4f6"></i><i style="background:#fff"></i><i style="background:#0f8b8d"></i><i style="background:#e4572e"></i></div></a>
+</div>
+<section><p><b>Chosen:</b> Glass. <a href="nav.html">Navigation study →</a> three ways to get around, sessions and recordings included. <a href="tasks.html">Tasks study →</a> the hermes kanban as one list with a triage deck.</p>
+<p><b>Run:</b> <code>cd docs/design && npx http-server -o</code> (or open <code>index.html</code> directly; no build step, no dependencies).</p>
+<p><b>What to react to:</b> the overall feel first, then the composer and model pill, the approval card, the recorder buttons, and the recordings rows. Mixing is fine: "Glass, but Console's approval card" is a valid answer.</p>
+</section></main></body></html>
