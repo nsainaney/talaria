@@ -241,12 +241,16 @@ final class ChatStore {
 
     /// Extra `prompt.submit` fields for a spoken turn: Hermes prepends a "you are being listened to"
     /// note to the model input, plus the recent exchange and whether the person cut the last reply off.
+    /// The context opens with the phone's clock: the system prompt only carries the day the chat
+    /// started and tells the model to use a tool for the time, which costs a whole round on
+    /// "what day is it tomorrow". Model input only; Hermes does not store `voice_context`.
     struct VoiceTurn {
         var context: String?
         var interrupted = false
         var params: [String: Any] {
             var p: [String: Any] = ["surface": "voice-live"]
-            if let context, !context.isEmpty { p["voice_context"] = context }
+            let now = "Now on the phone: \(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).year().hour().minute().timeZone()))"
+            p["voice_context"] = [now, context ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
             if interrupted { p["interrupted"] = true }
             return p
         }
