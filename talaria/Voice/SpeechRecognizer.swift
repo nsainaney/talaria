@@ -39,6 +39,10 @@ final class SpeechRecognizer: AudioOutput {
     var onError: ((Error) -> Void)?
     /// Microphone level 0…1, about ten times a second, for a meter.
     var onLevel: ((Float) -> Void)?
+    /// The system microphone mode (Standard, Voice Isolation, Wide Spectrum), at start and whenever
+    /// the person changes it in Control Center. Voice Isolation is the system's own ML filter for
+    /// background noise and other voices; an app cannot set it, only ask for the picker.
+    var onMicrophoneMode: ((AVCaptureDevice.MicrophoneMode) -> Void)?
     /// While the input is muted, the voice-processing unit still watches for the person talking
     /// (its own echo-aware detector, the one behind "you're muted"). True when speech starts,
     /// false when it ends.
@@ -52,8 +56,18 @@ final class SpeechRecognizer: AudioOutput {
     private var task: SFSpeechRecognitionTask?
     private let request = OSAllocatedUnfairLock<SFSpeechAudioBufferRecognitionRequest?>(initialState: nil)
     private let level = OSAllocatedUnfairLock<(peak: Float, buffers: Int)>(initialState: (0, 0))
+    /// The last half minute of microphone audio at 16 kHz mono, for the speaker verifier. Filled
+    /// from the tap after the voice-processing unit, so it is the same audio the recognizer hears.
+    private let recent = OSAllocatedUnfairLock(initialState: AudioRing(seconds: 30))
     private var generation = 0
     private var meterTask: Task<Void, Never>?
+
+    static let verifierFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+
+    /// The most recent `seconds` of microphone audio, 16 kHz mono, oldest first.
+    func recentAudio(seconds: Double) -> [Float] {
+        recent.withLock { $0.last(Int(seconds * 16000)) }
+    }
 
     init() {
         engine.attach(playerNode)
@@ -87,6 +101,9 @@ final class SpeechRecognizer: AudioOutput {
         guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceError.recognizerUnavailable }
         let box = request
         let meter = level
+        let ring = recent
+        ring.withLock { $0.clear() }
+        let converter = AVAudioConverter(from: format, to: Self.verifierFormat)
         input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, _ in
             box.withLock { $0?.append(buffer) }
             var peak: Float = 0
@@ -94,12 +111,17 @@ final class SpeechRecognizer: AudioOutput {
                 for i in stride(from: 0, to: Int(buffer.frameLength), by: 16) { peak = max(peak, abs(ch[i])) }
             }
             meter.withLock { $0 = (max($0.peak, peak), $0.buffers + 1) }
+            if let converter, let mono = Self.resample(buffer, with: converter) { ring.withLock { $0.append(mono) } }
         }
         try engine.start()
         isRunning = true
         beginUtterance()
+        log.info("microphone mode \(Self.describe(AVCaptureDevice.activeMicrophoneMode)); AGC \(input.isVoiceProcessingAGCEnabled)")
+        onMicrophoneMode?(AVCaptureDevice.activeMicrophoneMode)
         meterTask = Task { [weak self] in
             var reported = 0
+            var ticks = 0
+            var micMode = AVCaptureDevice.activeMicrophoneMode
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard let self else { return }
@@ -107,7 +129,47 @@ final class SpeechRecognizer: AudioOutput {
                 if buffers > reported, reported == 0 { log.info("first mic buffer received") }
                 reported = buffers
                 self.onLevel?(min(1, peak * 4))
+                // The mode is a class property without a notification; a once-a-second check is enough.
+                ticks += 1
+                if ticks % 10 == 0, AVCaptureDevice.activeMicrophoneMode != micMode {
+                    micMode = AVCaptureDevice.activeMicrophoneMode
+                    log.info("microphone mode now \(Self.describe(micMode))")
+                    self.onMicrophoneMode?(micMode)
+                }
             }
+        }
+    }
+
+    /// One tap buffer, converted to 16 kHz mono float. The converter keeps its own state between
+    /// calls, so consecutive buffers resample without seams.
+    private nonisolated static func resample(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) -> [Float]? {
+        let ratio = verifierFormat.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
+        guard let out = AVAudioPCMBuffer(pcmFormat: verifierFormat, frameCapacity: capacity) else { return nil }
+        var handed = false
+        var error: NSError?
+        converter.convert(to: out, error: &error) { _, status in
+            if handed { status.pointee = .noDataNow; return nil }
+            handed = true
+            status.pointee = .haveData
+            return buffer
+        }
+        guard error == nil, out.frameLength > 0, let ch = out.floatChannelData?[0] else { return nil }
+        return Array(UnsafeBufferPointer(start: ch, count: Int(out.frameLength)))
+    }
+
+    /// Opens the Control Center microphone-mode picker, the only way an app can offer Voice
+    /// Isolation. iOS remembers the choice for this app.
+    static func showMicrophoneModePicker() {
+        AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+    }
+
+    static func describe(_ mode: AVCaptureDevice.MicrophoneMode) -> String {
+        switch mode {
+        case .standard: "standard"
+        case .voiceIsolation: "voice isolation"
+        case .wideSpectrum: "wide spectrum"
+        @unknown default: "unknown"
         }
     }
 

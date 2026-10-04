@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var contextStatus: String?
     @State private var contextBusy = false
     @AppStorage(Speaker.voiceKey) private var voiceId = ""
+    @State private var enrolling = false
 
     var body: some View {
         @Bindable var settings = model.settings
@@ -88,6 +89,15 @@ struct SettingsView: View {
                     Toggle("Voice mode", isOn: $settings.voiceEnabled)
                     if settings.voiceEnabled {
                         Toggle("Hermes voice (server)", isOn: $settings.serverVoice)
+                        Toggle("Only my voice", isOn: $settings.voiceOnlyMine)
+                        Button {
+                            enrolling = true
+                        } label: {
+                            LabeledContent("My voice") {
+                                Text(SpeakerVerifier.hasProfile ? "Enrolled" : "Not set up").foregroundStyle(.secondary)
+                            }
+                        }
+                        .disabled(model.voice.isActive)
                         Toggle("Low reasoning while talking", isOn: $settings.voiceFastModel)
                         if settings.voiceFastModel {
                             TextField("Model alias (optional, e.g. fast)", text: $settings.voiceModelAlias)
@@ -101,7 +111,7 @@ struct SettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("Listening happens on this phone. With Hermes voice on, replies are synthesized by the TTS provider configured on your Hermes server and the phone voice is used only if that fails. The mic is muted while Hermes talks; use the Quiet button to cut a reply off. Permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices. Low reasoning: while voice mode is on the session answers with less thinking time and switches back afterwards. Naming a model alias also swaps the model for the whole turn, tools included, so leave it empty unless you want the faster, weaker model doing the work.")
+                    Text("Listening happens on this phone. Only my voice: once you have read three sentences under My voice, anything that does not sound like you (the TV, other people in the room) is ignored; the check runs on the phone. With Hermes voice on, replies are synthesized by the TTS provider configured on your Hermes server and the phone voice is used only if that fails. The mic is muted while Hermes talks; use the Quiet button to cut a reply off. Permission requests take a spoken allow, always or deny. For a better phone voice, download a Premium or Enhanced one in iOS Settings › Accessibility › Spoken Content › Voices. Low reasoning: while voice mode is on the session answers with less thinking time and switches back afterwards. Naming a model alias also swaps the model for the whole turn, tools included, so leave it empty unless you want the faster, weaker model doing the work.")
                 }
                 Section {
                     Button("Sign out", role: .destructive) {
@@ -113,6 +123,7 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .sheet(isPresented: $enrolling) { VoiceEnrollView() }
         }
     }
 

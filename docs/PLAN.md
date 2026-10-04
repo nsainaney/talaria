@@ -132,6 +132,12 @@ in one 23k-line `AppState.swift`. Files named as "lifts" are standalone and MIT.
 
 ### Voice robustness
 
+- [x] Ignore the TV and other people: on-device speaker verification (ECAPA-TDNN in Core ML,
+  `tools/speaker-model`), enrolled once under Settings › My voice, gating every utterance in
+  `VoiceController.utteranceEnded`. Chosen 2026-10-03 after Voice Isolation let TV dialogue through
+  and loudness ranked the TV above the person. Threshold 0.45, every score in the bench log for
+  tuning; mixed utterances (you, then the TV) are accepted on the first voice heard, per-segment
+  checking is the follow-up. *built, untested on device*
 - [ ] Interruption, route-change, engine-configuration-change and media-services-reset observers
   in `SpeechRecognizer`. Today a call, Siri or AirPods connecting can stop the engine while the
   screen and Live Activity still say Listening. `BackgroundRecorder.swift:270-336` already has the

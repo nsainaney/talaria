@@ -1,3 +1,4 @@
+import AVFoundation
 import ActivityKit
 import Foundation
 import Observation
@@ -24,6 +25,24 @@ final class VoiceController: VoiceChatCommands {
     private(set) var transcript = ""
     /// Microphone level 0…1 for the meter in the voice bar.
     private(set) var micLevel: Float = 0
+    /// The system microphone mode while listening; the screen suggests Voice Isolation when it is
+    /// Standard, since that is the one filter for room noise and other voices the phone offers.
+    private(set) var microphoneMode: AVCaptureDevice.MicrophoneMode?
+    /// Meter readings taken while the current utterance's words were arriving, for the loudness of
+    /// each utterance in the bench log: the data a "too quiet, someone else" gate would be tuned on.
+    @ObservationIgnored private var utteranceLevels: [Float] = []
+    /// When the current utterance's first words arrived; the verifier's audio window starts a
+    /// little before it, since the recognizer reports words a moment after they are spoken.
+    @ObservationIgnored private var utteranceStartedAt: Date?
+    /// Speaker verification of the utterance in progress, started while words still arrive so
+    /// the verdict is normally ready when the silence timer fires.
+    @ObservationIgnored private var verifying: Task<Float?, Never>?
+    @ObservationIgnored private var lastVerdict: Float?
+    /// Words dropped because they were not the enrolled voice; shown briefly on the voice screen.
+    private(set) var ignoredSpeech: String?
+    /// The running score of the utterance in progress is under the bar: the screen fades the live
+    /// transcript so a rejection does not come as a surprise.
+    private(set) var otherVoiceLikely = false
     var error: String?
     var isActive: Bool { state != .idle }
     /// The microphone is ignored and nothing is sent; Hermes waits. Its current reply still finishes.
@@ -75,7 +94,12 @@ final class VoiceController: VoiceChatCommands {
         speaker.output = recognizer
         recognizer.onText = { [weak self] in self?.heard($0) }
         recognizer.onError = { [weak self] in self?.error = $0.localizedDescription }
-        recognizer.onLevel = { [weak self] in self?.micLevel = $0 }
+        recognizer.onLevel = { [weak self] level in
+            guard let self else { return }
+            micLevel = level
+            if !transcript.isEmpty { utteranceLevels.append(level) }
+        }
+        recognizer.onMicrophoneMode = { [weak self] in self?.microphoneMode = $0 }
         speaker.onFinished = { [weak self] in self?.finishedSpeaking() }
         chat.signal = { [weak self] in self?.handle($0) }
     }
@@ -96,6 +120,8 @@ final class VoiceController: VoiceChatCommands {
         startActivity()
         state = chat.isRunning ? .thinking : .listening
         promptForPendingRequest()
+        // Load (and on a fresh install, compile) the speaker model now, not on the first utterance.
+        if settings.voiceOnlyMine, SpeakerVerifier.hasProfile { Task.detached(priority: .utility) { await SpeakerVerifier.shared.warmUp() } }
     }
 
     func pause() {
@@ -120,6 +146,12 @@ final class VoiceController: VoiceChatCommands {
         guard !transcript.isEmpty else { return }
         silenceTask?.cancel()
         transcript = ""
+        utteranceLevels = []
+        utteranceStartedAt = nil
+        verifying?.cancel()
+        verifying = nil
+        lastVerdict = nil
+        otherVoiceLikely = false
         recognizer.nextUtterance()
     }
 
@@ -218,7 +250,9 @@ final class VoiceController: VoiceChatCommands {
         // Not while answering: the prompt just said "allow" and "deny", the very words expected back.
         if answering == .none, isEcho(trimmed) { return }
         Bench.mark("partial", "chars=\(trimmed.count)")
+        if transcript.isEmpty { utteranceStartedAt = Date() }
         transcript = trimmed
+        verifyInProgress()
         silenceTask?.cancel()
         let pause = endOfUtterance
         silenceTask = Task { [weak self, unfinishedGrace] in
@@ -238,12 +272,84 @@ final class VoiceController: VoiceChatCommands {
         let text = transcript
         transcript = ""
         recognizer.nextUtterance()
+        let levels = utteranceLevels
+        utteranceLevels = []
+        let started = utteranceStartedAt
+        utteranceStartedAt = nil
+        let pending = verifying
+        verifying = nil
+        let earlier = lastVerdict
+        lastVerdict = nil
+        otherVoiceLikely = false
         guard !text.isEmpty, answering != .none || !isEcho(text) else { return }
-        Bench.mark("utterance_end", "chars=\(text.count) answering=\(answering != .none)")
+        let peak = levels.max() ?? 0
+        let mean = levels.isEmpty ? 0 : levels.reduce(0, +) / Float(levels.count)
+        Bench.mark("utterance_end", "chars=\(text.count) answering=\(answering != .none) peak=\(String(format: "%.2f", peak)) mean=\(String(format: "%.2f", mean)) mic=\(microphoneMode.map(SpeechRecognizer.describe) ?? "-")")
+        guard settings.voiceOnlyMine, SpeakerVerifier.hasProfile else { act(on: text); return }
+        Task { [weak self] in
+            // The verdict in flight covers the utterance up to its start; one that finished earlier
+            // covers less. Either is this utterance's voice, which is what matters.
+            // Never hold a turn for the verifier: past 1.5 s (model still compiling, slow path) the
+            // words go through unverified and the log says so.
+            let score: Float?
+            var timedOut = false
+            if let earlier, pending == nil {
+                score = earlier
+            } else {
+                let work = pending ?? Task { [weak self] in await self?.verify(since: started) }
+                score = await withTaskGroup(of: Float??.self) { group in
+                    group.addTask { await work.value }
+                    group.addTask { try? await Task.sleep(for: .milliseconds(1500)); return .some(nil) }
+                    let first = await group.next() ?? nil
+                    group.cancelAll()
+                    return first ?? nil
+                } ?? earlier
+                timedOut = score == nil && earlier == nil
+            }
+            guard let self else { return }
+            let ok = score.map { $0 >= SpeakerVerifier.threshold } ?? true
+            Bench.mark("speaker", "score=\(score.map { String(format: "%.2f", $0) } ?? "-") accepted=\(ok)\(timedOut ? " timeout" : "")")
+            if ok { act(on: text) } else { ignore(text, score: score ?? 0) }
+        }
+    }
+
+    private func act(on text: String) {
         switch answering {
         case .approval: answerApproval(text)
         case .clarify: answerClarify(text)
         case .none: Task { await submit(text) }
+        }
+    }
+
+    /// Score the audio of the utterance so far, unless a verification is already running; the
+    /// window starts a second before the first words were reported.
+    private func verifyInProgress() {
+        guard settings.voiceOnlyMine, SpeakerVerifier.hasProfile, verifying == nil else { return }
+        let started = utteranceStartedAt
+        verifying = Task { [weak self] in
+            let score = await self?.verify(since: started)
+            guard let self, !Task.isCancelled else { return score }
+            if let score {
+                lastVerdict = score
+                otherVoiceLikely = score < SpeakerVerifier.threshold
+            }
+            verifying = nil
+            return score
+        }
+    }
+
+    private func verify(since started: Date?) async -> Float? {
+        let seconds = min(20, Date().timeIntervalSince(started ?? Date()) + 1.0)
+        let samples = recognizer.recentAudio(seconds: seconds)
+        return await SpeakerVerifier.shared.similarity(samples)
+    }
+
+    private func ignore(_ text: String, score: Float) {
+        Self.log.notice("ignored speech, not the enrolled voice (score \(score)): \(text.prefix(60), privacy: .private)")
+        ignoredSpeech = text
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            if self?.ignoredSpeech == text { self?.ignoredSpeech = nil }
         }
     }
 

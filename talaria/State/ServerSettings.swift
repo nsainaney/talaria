@@ -12,6 +12,7 @@ final class ServerSettings {
     private static let serverVoiceKey = "talaria.serverVoice"
     private static let fastVoiceKey = "talaria.voiceFastModel"
     private static let voiceAliasKey = "talaria.voiceModelAlias"
+    private static let onlyMineKey = "talaria.voiceOnlyMine"
     private static let speakrURLKey = "speakr.url"
     private static let speakrTokenKey = "speakr.token"
     private static let kanbanBoardKey = "kanban.board"
@@ -28,6 +29,8 @@ final class ServerSettings {
     /// Optional model alias for spoken turns; empty keeps the session's model. Note the alias runs the
     /// whole agent loop (tools included), not just the chat.
     var voiceModelAlias: String { didSet { UserDefaults.standard.set(voiceModelAlias, forKey: Self.voiceAliasKey) } }
+    /// Drop speech that is not the enrolled voice (TV, other people). Needs a profile from "My voice".
+    var voiceOnlyMine: Bool { didSet { UserDefaults.standard.set(voiceOnlyMine, forKey: Self.onlyMineKey) } }
     /// Keep listening while Hermes speaks so you can talk over it. Off: the mic is ignored until it finishes.
     /// Speakr (meeting transcription) server; the API token lives in the Keychain.
     var speakrURL: String { didSet { UserDefaults.standard.set(speakrURL, forKey: Self.speakrURLKey) } }
@@ -43,6 +46,7 @@ final class ServerSettings {
         serverVoice = UserDefaults.standard.object(forKey: Self.serverVoiceKey) as? Bool ?? true
         voiceFastModel = UserDefaults.standard.object(forKey: Self.fastVoiceKey) as? Bool ?? true
         voiceModelAlias = UserDefaults.standard.string(forKey: Self.voiceAliasKey) ?? ""
+        voiceOnlyMine = UserDefaults.standard.object(forKey: Self.onlyMineKey) as? Bool ?? true
         speakrURL = UserDefaults.standard.string(forKey: Self.speakrURLKey) ?? ""
         speakrToken = Keychain.get(Self.speakrTokenKey) ?? ""
         kanbanBoard = UserDefaults.standard.string(forKey: Self.kanbanBoardKey) ?? ""

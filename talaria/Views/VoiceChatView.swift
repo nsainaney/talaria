@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import MarkdownUI
 
@@ -14,6 +15,17 @@ struct VoiceChatView: View {
             status(voice)
             exchange(voice)
                 .opacity(voice.isPaused ? 0.55 : 1)
+                // Rejections float over the exchange rather than in it, so nothing below shifts.
+                .overlay(alignment: .top) {
+                    if voice.ignoredSpeech != nil {
+                        Label("Ignored, not your voice", systemImage: "person.slash")
+                            .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                            .padding(.horizontal, 14).padding(.vertical, 8).glass(18)
+                            .padding(.top, 6)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .animation(.snappy, value: voice.ignoredSpeech == nil)
             ZStack {
                 Button {
                     if voice.isPaused { voice.resume() } else { voice.pause() }
@@ -53,6 +65,14 @@ struct VoiceChatView: View {
                 Text(e).font(.caption2).foregroundStyle(Theme.rec).lineLimit(2)
             } else if let e = v.serverVoiceError {
                 Text("Server voice unavailable, using the phone's: \(e)").font(.caption2).foregroundStyle(.orange).lineLimit(2)
+            } else if v.microphoneMode == .standard {
+                // The system's filter for room noise and other voices; only the person can turn it
+                // on, and iOS then remembers it for this app.
+                Button { SpeechRecognizer.showMicrophoneModePicker() } label: {
+                    Label("Voice Isolation is off. Turn it on to ignore noise and other voices.", systemImage: "waveform.badge.mic")
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.top, 4).padding(.bottom, 6).padding(.horizontal, 16)
@@ -106,10 +126,12 @@ struct VoiceChatView: View {
                         }
                     }
                     if !v.transcript.isEmpty {
-                        label("You", Theme.accent)
+                        // Faded while the verifier's running score says this is someone else's voice.
+                        label(v.otherVoiceLikely ? "Someone else" : "You", v.otherVoiceLikely ? .secondary : Theme.accent)
                         HStack(alignment: .top, spacing: 10) {
                             (Text(v.transcript) + Text(" ▎").foregroundStyle(Theme.accent.opacity(0.7)))
                                 .font(.title3).foregroundStyle(Theme.accent)
+                                .opacity(v.otherVoiceLikely ? 0.35 : 1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             // Someone else was talking: drop these words before they are sent.
                             Button { v.discardUtterance() } label: {
