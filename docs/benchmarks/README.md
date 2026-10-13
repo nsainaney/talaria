@@ -80,6 +80,12 @@ Spoken approvals and clarify answers are excluded. Compare medians.
 5. (dropped) A two-line excerpt per item in `context_triage`: the benchmark already takes one
    tool call at 0.02 s.
 6. (dropped) First-clause speech and sentence pipelining in `HermesSpeaker`: TTS is 0.2 s warm.
+7. Server side, from the nix-config session: `agent.disabled_toolsets = [browser]` on prometheus,
+   because the browser toolset probed `npx` on every turn (~0.9 s between prompt accepted and the
+   first model call, now 0.12 s). That time is inside our `token` column, so the control's 1.64 s
+   should fall toward 0.8 s. Re-measure 10 + 10 when Ollama Cloud is answering normally: on the
+   evening of 2026-10-03 `glm-5.3-flash` took 45–130 s per call (same prompts that took 1 s at
+   15:39), which would swamp any phone-side number.
 
 ## Seen along the way, to fix after the series
 

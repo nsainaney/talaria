@@ -124,13 +124,21 @@ final class VoiceController: VoiceChatCommands {
         if settings.voiceOnlyMine, SpeakerVerifier.hasProfile { Task.detached(priority: .utility) { await SpeakerVerifier.shared.warmUp() } }
     }
 
+    /// Pause the microphone only: Hermes keeps working and its reply is still spoken. A sentence
+    /// that was just finished (words heard, endpoint timer still running) is sent rather than lost,
+    /// since tapping Pause right after speaking is the common case.
     func pause() {
-        Self.log.notice("pause requested")
+        Self.log.notice("pause requested, pending transcript \(self.transcript.count) chars")
         guard isActive, !isPaused else { return }
         isPaused = true
-        silenceTask?.cancel()
-        transcript = ""
-        recognizer.nextUtterance()
+        if !transcript.isEmpty {
+            silenceTask?.cancel()
+            utteranceEnded()
+        } else {
+            silenceTask?.cancel()
+            transcript = ""
+            recognizer.nextUtterance()
+        }
     }
 
     func resume() {

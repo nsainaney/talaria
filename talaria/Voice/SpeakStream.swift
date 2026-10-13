@@ -21,6 +21,8 @@ final class SpeakStream {
     /// Sentences handed to this stream, for re-speaking elsewhere if it fails before any audio.
     private(set) var sent: [String] = []
     private(set) var gotAudio = false
+    /// The server's `start` frame arrived: the provider resolved and audio is about to follow.
+    private(set) var gotStart = false
     /// No more text will be sent (`done` sent or queued).
     private(set) var finished = false
     /// The server has said `end`, or the socket is gone: nothing more will arrive.
@@ -48,6 +50,15 @@ final class SpeakStream {
                 let t = session.webSocketTask(with: auth.webSocketURL(path: "/api/audio/speak-stream", ticket: ticket))
                 t.resume()
                 task = t
+                // Send the text now; URLSession holds frames until the handshake completes. Hermes
+                // 0.21.5 only answers `start` together with the first audio, so waiting for `start`
+                // before sending deadlocked both ends (2026-10-05). 0.21.3 sent `start` first and
+                // is fine with text arriving early.
+                isOpen = true
+                Self.log.notice("stream \(self.tag) open; flushing \(self.outbox.count) queued, done=\(self.doneQueued)")
+                for text in outbox { post(["text": text + " "]) }
+                outbox = []
+                if doneQueued { post(["done": true]) }
                 await receiveLoop(t)
             } catch {
                 Self.log.error("stream \(self?.tag ?? 0) ticket/connect failed: \(error.localizedDescription, privacy: .public)")
@@ -111,14 +122,13 @@ final class SpeakStream {
         let obj = (try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]) ?? [:]
         switch obj["type"] as? String {
         case "start":
-            Self.log.notice("stream \(self.tag) start; queued \(self.outbox.count) done=\(self.doneQueued)")
-            isOpen = true
+            // The audio format, before the first PCM frame (0.21.3: right after accept; 0.21.5:
+            // with the first chunk). Text is already on its way, see the connect task.
+            gotStart = true
+            Self.log.notice("stream \(self.tag) start")
             let rate = (obj["sample_rate"] as? Double) ?? Double((obj["sample_rate"] as? Int) ?? 24000)
             let channels = max(1, (obj["channels"] as? Int) ?? 1)
             onEvent?(.start(sampleRate: rate, channels: channels))
-            for text in outbox { post(["text": text + " "]) }
-            outbox = []
-            if doneQueued { post(["done": true]) }
         case "end":
             Self.log.notice("stream \(self.tag) end")
             ended = true

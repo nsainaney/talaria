@@ -79,7 +79,12 @@ struct VoiceChatView: View {
     }
 
     private func statusText(_ v: VoiceController) -> (String, Color) {
-        if v.isPaused { return ("Paused", .secondary) }
+        if v.isPaused {
+            // The mic is off; Hermes may still be at work, and that should stay visible.
+            if v.state == .speaking { return ("Paused · Hermes is speaking", .secondary) }
+            if v.state == .thinking || model.chat.isRunning { return ("Paused · Hermes is thinking", .secondary) }
+            return ("Paused", .secondary)
+        }
         switch v.answering {
         case .approval: return ("Say allow, always, or deny", Theme.accent)
         case .clarify: return ("Hermes is asking", Theme.accent)
